@@ -59,7 +59,7 @@
       const x = PAD.l + i * bw + bw * 0.18, w = bw * 0.64;
       const over = opts.target && opts.overIsBad && b.value > opts.target * 1.05;
       if (b.value) s += `<rect class="bar${over ? ' over' : ''}" x="${x}" y="${Y(b.value)}" width="${w}" height="${PAD.t + ih - Y(b.value)}" rx="3"><title>${b.label}: ${b.value}</title></rect>`;
-      if (data.length <= 14 || i % Math.ceil(data.length / 7) === 0) s += `<text x="${x + w / 2}" y="${H - 6}" text-anchor="middle">${b.label}</text>`;
+      if (data.length <= 8 || (data.length - 1 - i) % Math.ceil(data.length / 7) === 0) s += `<text x="${x + w / 2}" y="${H - 6}" text-anchor="middle">${b.label}</text>`;
     });
     if (opts.target) s += `<line class="target" x1="${PAD.l}" x2="${W - PAD.r}" y1="${Y(opts.target)}" y2="${Y(opts.target)}"/>`;
     return s + '</svg>';

@@ -228,3 +228,21 @@ main a { color: var(--accent); font-weight: 650; }
   .grid-2 { grid-template-columns: 1fr; }
   .big { font-size: 30px; }
 }
+
+/* food lookup */
+.lookup { margin-bottom: 12px; }
+.search-row { display: flex; gap: 8px; }
+.search-row input { flex: 1; min-width: 0; }
+.search-row .btn { flex: none; }
+input[type=search] { width: 100%; min-height: 46px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-2); font-size: 16px; }
+.res-head { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 12px 0 2px; }
+.results li { padding: 0; }
+.results button { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 10px 2px; cursor: pointer; }
+.results button:active { background: var(--surface-2); }
+.results .title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.picked { background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 14px; padding: 12px; margin-bottom: 14px; }
+.portion { display: grid; grid-template-columns: 90px 1fr; gap: 8px; margin: 10px 0 8px; }
+.portion select, .portion input { background: var(--surface); }
+.scanner { position: relative; border-radius: 14px; overflow: hidden; background: #000; aspect-ratio: 4 / 3; margin-top: 10px; }
+.scanner video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.scan-frame { position: absolute; left: 12%; right: 12%; top: 32%; bottom: 32%; border: 3px solid var(--accent); border-radius: 12px; box-shadow: 0 0 0 999px rgb(0 0 0 / .35); }

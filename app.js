@@ -81,6 +81,7 @@
     if (b && modalActions[b.dataset.modalAction]) { e.preventDefault(); modalActions[b.dataset.modalAction](b); }
   });
   modal.addEventListener('click', (e) => { if (e.target === modal) modal.close(); });
+  modal.addEventListener('close', () => window.FoodLookup && FoodLookup.stopScanner());
   const modalActions = {};
 
   const field = (label, input, hint = '') => `<label class="field"><span>${label}</span>${input}</label>${hint ? `<p class="hint">${hint}</p>` : ''}`;
@@ -94,6 +95,7 @@
   const foodOn = (iso) => S.food.filter((f) => f.date === iso);
   const sumKcal = (list) => list.reduce((a, f) => a + (f.kcal || 0), 0);
   const sumProtein = (list) => list.reduce((a, f) => a + (f.protein || 0), 0);
+  const sumMacro = (list, k) => list.reduce((a, f) => a + (f[k] || 0), 0);
   const bodySorted = () => [...S.body].sort((a, b) => a.date.localeCompare(b.date));
   const latestWith = (key) => { const b = bodySorted().filter((x) => x[key] != null); return b[b.length - 1] || null; };
   const activeHabits = () => S.habits.filter((h) => h.active);
@@ -270,6 +272,7 @@
     return h;
   };
 
+  const macroText = (f) => [f.protein ? 'P ' + fmt(f.protein, 0) : '', f.carbs ? 'C ' + fmt(f.carbs, 0) : '', f.fat ? 'F ' + fmt(f.fat, 0) : ''].filter(Boolean).join(' ');
   views.food = () => {
     const d = ui.foodDate, st = S.settings;
     const items = foodOn(d).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
@@ -279,6 +282,7 @@
     h += `<div class="card ring">${Charts.ring(eaten, st.calorieTarget)}<div><div class="big">${fmt(eaten, 0)}<small> kcal</small></div>
       <div class="sub">Target ${fmt(st.calorieTarget, 0)} · ${eaten <= st.calorieTarget ? fmt(st.calorieTarget - eaten, 0) + ' left' : `<span class="bad">${fmt(eaten - st.calorieTarget, 0)} over</span>`}</div>
       <div class="sub">Protein ${fmt(protein, 0)} / ${fmt(st.proteinTarget, 0)} g</div>
+      ${sumMacro(items, 'carbs') || sumMacro(items, 'fat') ? `<div class="sub">Carbs ${fmt(sumMacro(items, 'carbs'), 0)} g · Fat ${fmt(sumMacro(items, 'fat'), 0)} g</div>` : ''}
       <a href="#" class="sub" data-action="calc" style="font-size:13px">Not sure about your target? Calculate it</a></div></div>`;
 
     const meals = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
@@ -288,7 +292,7 @@
       const list = items.filter((f) => (f.meal || 'Snack') === m);
       if (!list.length) return;
       h += `<div class="sub" style="font-weight:700;margin-top:6px">${m} · ${fmt(sumKcal(list), 0)} kcal</div><ul class="list">${list.map((f) =>
-        `<li><div class="grow" data-action="edit-food" data-id="${f.id}" style="cursor:pointer"><div class="title">${esc(f.name)}</div><div class="meta">${f.time || ''}${f.protein ? ' · ' + fmt(f.protein, 0) + 'g protein' : ''}</div></div>
+        `<li><div class="grow" data-action="edit-food" data-id="${f.id}" style="cursor:pointer"><div class="title">${esc(f.name)}</div><div class="meta">${[f.time, f.serving ? esc(f.serving) : '', macroText(f)].filter(Boolean).join(' · ')}</div></div>
         <span class="num">${fmt(f.kcal, 0)}</span><button class="del" data-action="del-food" data-id="${f.id}" aria-label="Delete">×</button></li>`).join('')}</ul>`;
     });
     h += `</div>`;
@@ -298,7 +302,7 @@
     [...S.food].sort(byDateDesc).forEach((f) => { const k = f.name.toLowerCase(); if (!seen.has(k) && recent.length < 10) { seen.add(k); recent.push(f); } });
     if (recent.length) {
       h += `<div class="card"><div class="card-head"><h2>Quick add</h2></div><ul class="list">${recent.map((f) =>
-        `<li><div class="grow"><div class="title">${esc(f.name)}</div><div class="meta">${fmt(f.kcal, 0)} kcal${f.protein ? ' · ' + fmt(f.protein, 0) + 'g' : ''}</div></div>
+        `<li><div class="grow"><div class="title">${esc(f.name)}</div><div class="meta">${fmt(f.kcal, 0)} kcal${macroText(f) ? ' · ' + macroText(f) : ''}</div></div>
         <button class="btn small" data-action="quick-food" data-id="${f.id}">+ Add</button></li>`).join('')}</ul></div>`;
     }
 
@@ -520,20 +524,197 @@
   }
 
   // ---------- forms ----------
+  // Log-food form with search (your foods, built-in USDA database, Open Food Facts) and barcode scanning.
   function foodForm(f = {}) {
     const isEdit = !!f.id;
     const hr = new Date().getHours();
     const defMeal = hr < 11 ? 'Breakfast' : hr < 15 ? 'Lunch' : hr < 21 ? 'Dinner' : 'Snack';
     openModal(`<h2>${isEdit ? 'Edit food' : 'Log food'}</h2>
-      ${field('What', inText('name', f.name, 'required autofocus placeholder="e.g. Chicken & rice bowl" autocomplete="off"'))}
+      ${isEdit ? '' : `<div class="lookup">
+        <div class="search-row"><input type="search" id="fsearch" placeholder="Search: eggs, rice, Chobani…" autocomplete="off" enterkeyhint="search" autofocus>
+        <button class="btn" data-modal-action="scan" aria-label="Scan barcode">${ICON_SCAN}<span>Scan</span></button></div>
+        <div id="fresults"></div></div>`}
+      <div id="fpick"></div>
+      ${field('What', inText('name', f.name, `required ${isEdit ? 'autofocus' : ''} placeholder="Or type it in yourself" autocomplete="off"`))}
       <div class="fields-2">${field('Calories', inNum('kcal', f.kcal, 'required min="0"'))}${field('Protein (g)', inNum('protein', f.protein, 'min="0"'))}</div>
+      <div class="fields-2">${field('Carbs (g)', inNum('carbs', f.carbs, 'min="0"'))}${field('Fat (g)', inNum('fat', f.fat, 'min="0"'))}</div>
+      <input type="hidden" name="serving" value="${esc(f.serving || '')}">
       <div class="fields-2">${field('Meal', `<select name="meal">${['Breakfast', 'Lunch', 'Dinner', 'Snack'].map((m) => `<option ${(f.meal || defMeal) === m ? 'selected' : ''}>${m}</option>`).join('')}</select>`)}
       ${field('Time', `<input type="time" name="time" value="${f.time || nowTime()}">`)}</div>
       ${field('Date', inDate('date', f.date || ui.foodDate))}`, (fd) => {
-      const rec = { id: f.id || uid(), name: fd.get('name').trim(), kcal: num(fd.get('kcal')) || 0, protein: num(fd.get('protein')), meal: fd.get('meal'), time: fd.get('time'), date: fd.get('date') };
+      const rec = { id: f.id || uid(), name: fd.get('name').trim(), kcal: num(fd.get('kcal')) || 0, protein: num(fd.get('protein')), carbs: num(fd.get('carbs')), fat: num(fd.get('fat')),
+        serving: fd.get('serving') || '', meal: fd.get('meal'), time: fd.get('time'), date: fd.get('date') };
       if (isEdit) S.food = S.food.map((x) => (x.id === f.id ? rec : x)); else S.food.push(rec);
       save(); toast(`Logged ${rec.kcal} kcal`);
     });
+    if (isEdit) return;
+    const input = $('#fsearch');
+    // manual edits to the name clear the "serving" label from a previous pick
+    modalForm.elements.name.addEventListener('input', () => { modalForm.elements.serving.value = ''; });
+    let seq = 0, debounce;
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(debounce); runSearch(true); } });
+    input.addEventListener('input', () => { clearTimeout(debounce); debounce = setTimeout(() => runSearch(false), 160); });
+    showRecent();
+
+    function showRecent() {
+      const mine = FoodLookup.searchHistory('', S.food, 6);
+      foodCache.list = mine;
+      $('#fresults').innerHTML = mine.length ? `<div class="res-head">Recent</div>${resultList(mine, 0)}` : '<p class="hint" style="margin:6px 0 0">Search ~7,000 common foods, look up packaged foods, or scan a barcode.</p>';
+    }
+    async function runSearch(online) {
+      const q = input.value.trim();
+      const my = ++seq;
+      if (q.length < 2) { showRecent(); return; }
+      const mine = FoodLookup.searchHistory(q, S.food, 4);
+      let common = [];
+      const box = $('#fresults');
+      if (!box) return;
+      try { common = await FoodLookup.searchCommon(q, 10); } catch (e) { box.innerHTML = `<p class="hint">Food database didn't load (${esc(e.message)}). Packaged search may still work.</p>`; }
+      if (my !== seq) return;
+      foodCache.list = [...mine, ...common];
+      let h = '';
+      if (mine.length) h += `<div class="res-head">Your foods</div>${resultList(mine, 0)}`;
+      if (common.length) h += `<div class="res-head">Common foods · USDA</div>${resultList(common, mine.length)}`;
+      if (!mine.length && !common.length) h += `<p class="hint" style="margin:6px 0">No matches in common foods.</p>`;
+      h += `<div id="fonline">${online ? '' : `<button class="btn small block" data-modal-action="search-online">Search packaged & brand foods for “${esc(q)}”</button>`}</div>`;
+      box.innerHTML = h;
+      if (online) searchOnline(q, my);
+    }
+    async function searchOnline(q, my) {
+      const box = $('#fonline');
+      if (!box) return;
+      box.innerHTML = '<p class="hint">Searching Open Food Facts…</p>';
+      try {
+        const res = await FoodLookup.searchPackaged(q, 12);
+        if (my !== seq || !$('#fonline')) return;
+        const base = foodCache.list.length;
+        foodCache.list = foodCache.list.concat(res);
+        $('#fonline').innerHTML = res.length ? `<div class="res-head">Packaged foods · Open Food Facts</div>${resultList(res, base)}` : '<p class="hint">No packaged foods found. Try the brand name, or scan the barcode.</p>';
+      } catch (e) {
+        if ($('#fonline')) $('#fonline').innerHTML = `<p class="hint">${esc(navigator.onLine ? e.message : 'You\'re offline. Packaged-food search needs a connection.')}</p>
+          ${navigator.onLine ? '<button class="btn small block" data-modal-action="search-online">Try again</button>' : ''}`;
+      }
+    }
+    modalActions['search-online'] = () => { clearTimeout(debounce); seq++; searchOnline(input.value.trim(), seq); };
+  }
+  const ICON_SCAN = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M10 8v8M13 8v8M17 8v8"/></svg>';
+  const foodCache = { list: [] };
+
+  function resultList(items, offset) {
+    return `<ul class="list results">${items.map((it, i) => {
+      const per = it.perServing && !it.per100 ? it.perServing : null;
+      const meta = it.source === 'Mine' ? `${fmt(it.perServing.k, 0)} kcal${it.entry.serving ? ' · ' + esc(it.entry.serving) : ''}`
+        : per ? `${fmt(per.k, 0)} kcal / serving` : `${fmt(it.per100.k, 0)} kcal / 100 g · P ${fmt(it.per100.p, 0)} C ${fmt(it.per100.c, 0)} F ${fmt(it.per100.f, 0)}`;
+      return `<li><button data-modal-action="pick-food" data-i="${offset + i}"><div class="title">${esc(FoodLookup.displayName(it))}</div><div class="meta">${it.brand && it.source !== 'USDA' ? esc(it.brand) + ' · ' : ''}${meta}</div></button></li>`;
+    }).join('')}</ul>`;
+  }
+
+  // Selecting a result shows a portion picker that fills in the fields below it.
+  function showPicker(food) {
+    const pick = $('#fpick');
+    if (!pick) return;
+    const opts = food.portions.map(([label], i) => `<option value="${i}">${esc(label)}</option>`).join('') + (food.per100 ? '<option value="-1">grams</option>' : '');
+    const dp = FoodLookup.defaultPortion(food);
+    pick.innerHTML = `<div class="picked"><div class="row" style="justify-content:space-between;flex-wrap:nowrap;align-items:flex-start">
+        <div><strong>${esc(FoodLookup.displayName(food))}</strong><div class="sub" style="font-size:12px">${food.source === 'Mine' ? 'From your log' : food.source}${food.brand && food.source !== 'USDA' ? ' · ' + esc(food.brand) : ''}</div></div>
+        <button class="del" data-modal-action="unpick" aria-label="Clear">×</button></div>
+      <div class="portion"><input type="number" id="pqty" inputmode="decimal" step="any" min="0" value="${dp === -1 ? 100 : 1}" aria-label="Amount">
+        <select id="pportion" aria-label="Portion">${opts}</select></div>
+      <div id="pout" class="sub"></div></div>`;
+    $('#pportion').value = String(dp);
+    const apply = () => {
+      const pi = Number($('#pportion').value), qty = Number($('#pqty').value) || 0;
+      const n = FoodLookup.nutrition(food, pi, qty);
+      const els = modalForm.elements;
+      if (!n) { $('#pout').textContent = 'No nutrition data for this portion. Enter it below.'; return; }
+      els.name.value = FoodLookup.displayName(food);
+      els.kcal.value = n.k; els.protein.value = n.p; els.carbs.value = n.c; els.fat.value = n.f;
+      const label = pi === -1 ? `${fmt(qty)} g` : `${fmt(qty)} × ${food.portions[pi][0]}`;
+      els.serving.value = food.source === 'Mine' && qty === 1 ? food.entry.serving || '' : food.source === 'Mine' ? `${fmt(qty)} × ${food.entry.serving || 'serving'}` : label;
+      const grams = pi === -1 ? qty : food.portions[pi][1] ? food.portions[pi][1] * qty : null;
+      $('#pout').innerHTML = `<strong>${n.k} kcal</strong> · P ${n.p} · C ${n.c} · F ${n.f}${grams ? ` <span style="opacity:.7">(${fmt(grams, 0)} g)</span>` : ''}`;
+    };
+    $('#pqty').addEventListener('input', apply);
+    $('#pportion').addEventListener('change', () => { if ($('#pportion').value === '-1' && Number($('#pqty').value) < 5) $('#pqty').value = 100; apply(); });
+    apply();
+    pick.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+  modalActions['pick-food'] = (b) => {
+    const food = foodCache.list[Number(b.dataset.i)];
+    if (!food) return;
+    if (food.source === 'Mine') {
+      food.perServing = { k: food.entry.kcal || 0, p: food.entry.protein || 0, c: food.entry.carbs || 0, f: food.entry.fat || 0 };
+      food.portions = [[food.entry.serving ? `serving (${food.entry.serving})` : 'serving', null]];
+      const meal = modalForm.elements.meal;
+      if (food.entry.meal && meal) meal.value = food.entry.meal;
+    }
+    $('#fresults').innerHTML = '';
+    showPicker(food);
+  };
+  modalActions.unpick = () => {
+    $('#fpick').innerHTML = '';
+    ['name', 'kcal', 'protein', 'carbs', 'fat', 'serving'].forEach((k) => { modalForm.elements[k].value = ''; });
+    const inp = $('#fsearch'); if (inp) { inp.dispatchEvent(new Event('input')); inp.focus(); }
+  };
+  modalActions.scan = () => {
+    const box = $('#fresults');
+    $('#fpick').innerHTML = '';
+    box.innerHTML = `<div class="scanner"><video muted playsinline></video><div class="scan-frame"></div></div>
+      <p class="hint" id="scan-msg" style="margin:8px 0">Point the camera at the barcode.</p>
+      <div class="search-row"><input type="text" id="scan-code" inputmode="numeric" placeholder="…or type the barcode number" autocomplete="off">
+      <button class="btn" data-modal-action="lookup-code">Look up</button></div>
+      <button class="btn small block" data-modal-action="stop-scan" style="margin-top:8px">Cancel scan</button>`;
+    $('#scan-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); modalActions['lookup-code'](); } });
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      $('.scanner').remove();
+      $('#scan-msg').textContent = 'This browser can\'t use the camera here. Type the barcode number instead.';
+      return;
+    }
+    FoodLookup.startScanner($('.scanner video'), (code) => lookupBarcode(code), (msg) => {
+      const sc = $('.scanner'); if (sc) sc.remove();
+      const m = $('#scan-msg'); if (m) m.textContent = msg;
+    });
+  };
+  modalActions['stop-scan'] = () => { FoodLookup.stopScanner(); const inp = $('#fsearch'); if (inp) inp.dispatchEvent(new Event('input')); };
+  modalActions['lookup-code'] = () => {
+    const code = ($('#scan-code').value || '').replace(/\D/g, '');
+    if (code.length < 8) { toast('Barcodes are 8–14 digits'); return; }
+    FoodLookup.stopScanner();
+    lookupBarcode(code);
+  };
+  async function lookupBarcode(code) {
+    const box = $('#fresults');
+    if (!box) return;
+    box.innerHTML = `<p class="hint">Looking up ${esc(code)}…</p>`;
+    // Previously logged with this barcode? Use your own numbers first.
+    const prev = [...S.food].reverse().find((x) => x.barcode === code);
+    try {
+      const food = await FoodLookup.byBarcode(code);
+      if (!$('#fresults')) return;
+      if (!food && !prev) {
+        box.innerHTML = `<p class="hint">Barcode ${esc(code)} isn't in Open Food Facts yet. Enter the label's numbers below — next time you can find it under Recent.</p>`;
+        modalForm.elements.name.focus();
+        return;
+      }
+      box.innerHTML = '';
+      if (food) { food.barcode = code; showPicker(food); } else modalActions['pick-food']({ dataset: { i: (foodCache.list = FoodLookup.searchHistory(prev.name, S.food, 1), 0) } });
+      ensureBarcodeField(code);
+    } catch (e) {
+      if ($('#fresults')) box.innerHTML = `<p class="hint">${esc(navigator.onLine ? e.message : 'You\'re offline. Barcode lookup needs a connection.')}</p>`;
+      ensureBarcodeField(code);
+    }
+  }
+  function ensureBarcodeField(code) {
+    let el = modalForm.elements.barcode;
+    if (!el) { el = document.createElement('input'); el.type = 'hidden'; el.name = 'barcode'; modalForm.appendChild(el); }
+    el.value = code;
+    // store barcode on save
+    const prevHandler = modalHandler;
+    modalHandler = (fd, form) => {
+      const out = prevHandler(fd, form);
+      if (out !== false) { const last = S.food[S.food.length - 1]; if (last) last.barcode = code; save(); }
+      return out;
+    };
   }
 
   function workoutForm(w = {}) {
