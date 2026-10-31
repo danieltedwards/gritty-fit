@@ -88,7 +88,7 @@
   }
 
   function parse(text) {
-    const out = { ok: false, steps: null, active: null, sleepMin: null, rhr: null, weight: null, weightUnit: null, bodyFat: null, workouts: [], date: null };
+    const out = { ok: false, steps: null, active: null, exerciseMin: null, sleepMin: null, rhr: null, weight: null, weightUnit: null, bodyFat: null, workouts: [], date: null };
     if (!text) return out;
     const lines = String(text).split(/\r?\n/);
     let currentKey = null;
@@ -97,7 +97,7 @@
       if (!line) continue;
       if (/^gritty ?fit/i.test(line)) { out.ok = true; continue; }
       const m = line.match(/^([A-Za-z][A-Za-z \-]*?)\s*[:=]\s*(.*)$/);
-      const KNOWN = /^(steps?|active|sleep|resting|rhr|weight|body ?fat|workouts?|date)\b/i;
+      const KNOWN = /^(steps?|active|exercise|sleep|resting|rhr|weight|body ?fat|workouts?|date)\b/i;
       let key, val;
       if (m && KNOWN.test(m[1])) { key = m[1].toLowerCase(); val = m[2]; }
       else if (currentKey === 'workout') { key = 'workout'; val = line.replace(/^[-•*]\s*/, ''); }
@@ -105,6 +105,7 @@
       if (/^date/.test(key)) { const d = parseDateTime(val); if (d) out.date = d.date; continue; }
       if (/^steps?/.test(key)) { const n = parseNum(val); if (n != null) { out.steps = Math.round(n); out.ok = true; } continue; }
       if (/^active/.test(key)) { const n = parseNum(val); if (n != null) { out.active = Math.round(/kj/i.test(val) ? n / 4.184 : n); out.ok = true; } continue; }
+      if (/^exercise/.test(key)) { const n = parseDuration(val, 'workout'); if (n != null) { out.exerciseMin = Math.round(n); out.ok = true; } continue; }
       if (/^sleep/.test(key)) { const n = parseDuration(val, 'sleep'); if (n != null) { out.sleepMin = Math.round(n); out.ok = true; } continue; }
       if (/^(resting|rhr)/.test(key)) { const n = parseNum(val); if (n != null) { out.rhr = Math.round(n); out.ok = true; } continue; }
       if (/^weight/.test(key)) { const n = parseNum(val); if (n != null) { out.weight = n; out.weightUnit = /kg/i.test(val) ? 'kg' : /lb|pound/i.test(val) ? 'lb' : null; out.ok = true; } continue; }

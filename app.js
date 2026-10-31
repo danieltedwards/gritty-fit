@@ -220,7 +220,7 @@
       const isToday = !!S.health[t];
       const stat = (v, label) => (v != null ? `<div><div class="big" style="font-size:22px">${v}</div><div class="sub" style="font-size:12px">${label}</div></div>` : '');
       h += `<div class="card"><div class="card-head"><h2>⌚ Apple Health</h2><span class="sub">${isToday ? 'Today' : 'Yesterday'} · ${hd.at ? new Date(hd.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''}</span></div>
-        <div class="row" style="justify-content:space-between">${stat(hd.steps != null ? fmt(hd.steps, 0) : null, 'steps')}${stat(hd.active != null ? fmt(hd.active, 0) : null, 'active kcal')}${stat(hd.sleepMin != null ? fmtSleep(hd.sleepMin) : null, 'sleep')}${stat(hd.rhr, 'resting HR')}</div>
+        <div class="row" style="justify-content:space-between">${stat(hd.steps != null ? fmt(hd.steps, 0) : null, 'steps')}${stat(hd.active != null ? fmt(hd.active, 0) : null, 'active kcal')}${stat(hd.exerciseMin != null ? hd.exerciseMin : null, 'exercise min')}${stat(hd.sleepMin != null ? fmtSleep(hd.sleepMin) : null, 'sleep')}${stat(hd.rhr, 'resting HR')}</div>
         <button class="btn small block" data-action="health-import" style="margin-top:12px">Update from Apple Health</button></div>`;
     }
     const records = S.food.length + S.workouts.length + S.body.length + S.journal.length;
@@ -998,6 +998,7 @@
       ${field('Daily totals are for', `<select name="hdate"><option value="${t}">Today, ${prettyDate(t)}</option><option value="${addDays(t, -1)}">Yesterday, ${prettyDate(addDays(t, -1))}</option></select>`)}
       ${check('h_steps', 'Steps', r.steps != null ? fmt(r.steps, 0) : null)}
       ${check('h_active', 'Active calories', r.active != null ? fmt(r.active, 0) + ' kcal' : null)}
+      ${check('h_exercise', 'Exercise', r.exerciseMin != null ? r.exerciseMin + ' min' : null)}
       ${check('h_sleep', 'Sleep', r.sleepMin != null ? fmtSleep(r.sleepMin) : null)}
       ${check('h_rhr', 'Resting heart rate', r.rhr != null ? r.rhr + ' bpm' : null)}
       ${check('h_weight', 'Weigh-in', wConv != null ? `${fmt(wConv)} ${u}` : null, true, r.bodyFat != null ? ` · ${fmt(r.bodyFat)}% fat` : '')}
@@ -1033,6 +1034,7 @@
     const done = [];
     if (on('h_steps')) { day.steps = r.steps; done.push('steps'); }
     if (on('h_active')) { day.active = r.active; done.push('active calories'); }
+    if (on('h_exercise')) { day.exerciseMin = r.exerciseMin; done.push('exercise minutes'); }
     if (on('h_sleep')) { day.sleepMin = r.sleepMin; done.push('sleep'); }
     if (on('h_rhr')) { day.rhr = r.rhr; done.push('resting HR'); }
     day.at = new Date().toISOString();

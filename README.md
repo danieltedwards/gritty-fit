@@ -33,7 +33,7 @@ To rebuild `foods.json` from a newer USDA release, see `tools/` (not needed for 
 
 Web apps can't read Apple Health directly (Apple only allows that for App Store apps), so a free
 **Apple Shortcut** reads it and copies a short summary, and Gritty Fit pastes it in.
-Steps, active calories, sleep, resting heart rate, weight/body fat and **watch workouts** come in.
+Steps, active calories, exercise minutes, sleep, resting heart rate and weight/body fat come in.
 Habits like "10,000 steps" and "7+ hours sleep" tick themselves, and duplicates are skipped.
 
 ### Build the Shortcut (one time, ~5 minutes)
@@ -66,16 +66,15 @@ filter rows to set them exactly as listed.
 - **Calculate Statistics** → **Sum**
 - **Set Variable** → `Sleep`
 
-**6. Workouts**
-- **Find Health Samples** → *Type* is **Workouts**, *Start Date* is **in the last 2 days**
-  (on some iOS versions this is a separate action called **Find Workouts**)
-- **Repeat with Each** → inside the repeat, add a **Text** action. Tap in it and insert *Repeat Item*
-  four times, tapping each one to pick a detail, separated by ` ; ` like this:
-  `[Repeat Item › Type] ; [Repeat Item › Start Date] ; [Repeat Item › Duration] ; [Repeat Item › Value]`
-  (the name field may be called *Type*, *Name* or *Workout Type* depending on iOS; skip *Value* if there's
-  no calories option)
-- after **End Repeat**: **Combine Text** → *Repeat Results* with **New Lines**
-- **Set Variable** → `Workouts`
+**6. Exercise minutes** (your green Exercise ring)
+- **Find Health Samples** → *Type* is **Exercise Minutes** (may be listed as *Exercise Time*), *Start Date* is **today**, *Group By* **Day**
+- **Set Variable** → `Exercise`
+
+> **Workouts:** Apple's Shortcuts can't read individual watch workouts (there's no *Workouts* type
+> in Find Health Samples), so log sessions in the **Train** tab — that's where your sets and PRs go
+> anyway. Calories burned in workouts are already included in **Active**. If a future iOS adds a
+> workouts option, the app still accepts a `Workouts:` section (one line per workout:
+> `name ; start date ; duration ; calories`).
 
 **7. Build the summary** — add a **Text** action and type exactly this, inserting each variable
 where shown (tap the variable bar above the keyboard):
@@ -84,12 +83,11 @@ where shown (tap the variable bar above the keyboard):
 GRITTYFIT
 Steps: [Steps]
 Active: [Active]
+Exercise: [Exercise]
 Sleep: [Sleep]
 Resting HR: [RHR]
 Weight: [Weight]
 Body Fat: [BodyFat]
-Workouts:
-[Workouts]
 ```
 Leave out any lines for sections you skipped.
 
@@ -114,7 +112,6 @@ pick **Gritty Fit Health**. Each evening you'll get the notification; open Gritt
 
 - **"That doesn't look like the Shortcut's output"**: the text must start with `GRITTYFIT`. Run the Shortcut again right before pasting (copying anything else replaces it).
 - **A number is missing**: open the Shortcut and check that section's filters; an empty line just means Health had no data for it.
-- **Workout names look odd**: tap the *Repeat Item* in step 6 and choose a different detail for the name.
 - Everything is shown before it's saved, so you can untick anything that looks wrong.
 
 ## Where your data lives
