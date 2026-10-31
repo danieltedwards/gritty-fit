@@ -33,6 +33,7 @@
       { id: uid(), name: '7+ hours sleep', active: true },
     ],
     habitLog: {},
+    health: {},
   });
   let S = null;
   let saveTimer = null;
@@ -214,6 +215,14 @@
     let h = `<p class="sub" style="margin:0 0 14px">${greet}${st.name ? ', ' + esc(st.name) : ''}. ${strk ? `<strong>${strk}-day</strong> logging streak — keep it alive.` : 'Log anything today to start a streak.'}</p>`;
 
     h += `<div class="quick-row"><button class="btn primary" data-action="add-food">+ Food</button><button class="btn primary" data-action="add-workout">+ Workout</button><button class="btn primary" data-action="add-body">+ Weight</button></div>`;
+    const hd = S.health && (S.health[t] || S.health[addDays(t, -1)]);
+    if (hd) {
+      const isToday = !!S.health[t];
+      const stat = (v, label) => (v != null ? `<div><div class="big" style="font-size:22px">${v}</div><div class="sub" style="font-size:12px">${label}</div></div>` : '');
+      h += `<div class="card"><div class="card-head"><h2>⌚ Apple Health</h2><span class="sub">${isToday ? 'Today' : 'Yesterday'} · ${hd.at ? new Date(hd.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''}</span></div>
+        <div class="row" style="justify-content:space-between">${stat(hd.steps != null ? fmt(hd.steps, 0) : null, 'steps')}${stat(hd.active != null ? fmt(hd.active, 0) : null, 'active kcal')}${stat(hd.sleepMin != null ? fmtSleep(hd.sleepMin) : null, 'sleep')}${stat(hd.rhr, 'resting HR')}</div>
+        <button class="btn small block" data-action="health-import" style="margin-top:12px">Update from Apple Health</button></div>`;
+    }
     const records = S.food.length + S.workouts.length + S.body.length + S.journal.length;
     const sinceBackup = st.lastBackup ? daysBetween(st.lastBackup.slice(0, 10), t) : null;
     if (records >= 15 && (sinceBackup == null || sinceBackup >= 14)) {
@@ -272,6 +281,7 @@
     return h;
   };
 
+  const fmtSleep = (min) => `${Math.floor(min / 60)}h ${pad(Math.round(min % 60))}m`;
   const macroText = (f) => [f.protein ? 'P ' + fmt(f.protein, 0) : '', f.carbs ? 'C ' + fmt(f.carbs, 0) : '', f.fat ? 'F ' + fmt(f.fat, 0) : ''].filter(Boolean).join(' ');
   views.food = () => {
     const d = ui.foodDate, st = S.settings;
@@ -337,7 +347,7 @@
     const list = [...S.workouts].sort(byDateDesc);
     h += `<div class="card"><div class="card-head"><h2>History</h2><button class="btn small primary" data-action="add-workout">+ Add</button></div>`;
     h += list.length ? list.slice(0, 60).map((w) => `<div class="entry"><div class="row" style="justify-content:space-between">
-        <div data-action="edit-workout" data-id="${w.id}" style="cursor:pointer;flex:1"><div class="meta">${relDay(w.date)}${w.minutes ? ' · ' + w.minutes + ' min' : ''}${w.intensity ? ' · RPE ' + w.intensity : ''}</div>
+        <div data-action="edit-workout" data-id="${w.id}" style="cursor:pointer;flex:1"><div class="meta">${w.source === 'Apple Health' ? '⌚ ' : ''}${relDay(w.date)}${w.time ? ' ' + w.time : ''}${w.minutes ? ' · ' + w.minutes + ' min' : ''}${w.kcal ? ' · ' + w.kcal + ' kcal' : ''}${w.avgHr ? ' · ' + w.avgHr + ' bpm' : ''}${w.intensity ? ' · RPE ' + w.intensity : ''}</div>
         <strong>${esc(w.type)}</strong></div><button class="btn small" style="flex:none" data-action="repeat-workout" data-id="${w.id}">Repeat</button><button class="del" data-action="del-workout" data-id="${w.id}" aria-label="Delete">×</button></div>
         ${w.exercises ? `<p class="sub">${esc(w.exercises)}</p>` : ''}${w.notes ? `<p>${esc(w.notes)}</p>` : ''}</div>`).join('')
       : `<div class="empty">No workouts logged yet.</div>`;
@@ -817,6 +827,9 @@
       <div class="fields-2">${field('Daily calories', inNum('calorieTarget', st.calorieTarget, 'min="0" required'))}${field('Daily protein (g)', inNum('proteinTarget', st.proteinTarget, 'min="0"'))}</div>
       <p class="hint"><a href="#" data-modal-action="calc" style="color:var(--accent);font-weight:650">Calculate my targets</a> from height, age, weight and activity.</p>
       <div class="fields-2">${field('Workouts / week', inNum('workoutsPerWeek', st.workoutsPerWeek, 'min="0" max="14" step="1"'))}${field(`Goal weight (${st.units})`, inNum('goalWeight', st.goalWeight, 'min="0"'))}</div>
+      <div class="sub" style="font-weight:700;margin:10px 0 8px">Apple Watch / Apple Health</div>
+      <p class="hint">Bring in steps, active calories, sleep, resting heart rate, weight and watch workouts with a one-tap Shortcut. <a href="https://github.com/danieltedwards/gritty-fit#apple-watch--apple-health" target="_blank" rel="noopener" style="color:var(--accent);font-weight:650">Setup guide</a></p>
+      <button class="btn block" data-modal-action="health-import" style="margin-bottom:12px">⌚ Import from Apple Health</button>
       <div class="sub" style="font-weight:700;margin:10px 0 8px">Your data</div>
       <p class="hint">Everything is stored only in this browser on this device. Export a backup now and then — clearing browser data deletes it.</p>
       <div class="row" style="margin-bottom:10px"><button class="btn" data-modal-action="export">Export backup</button><button class="btn" data-modal-action="import">Import backup</button></div>
@@ -947,6 +960,107 @@
       <ul class="list" style="margin-top:10px">${[...pts].reverse().slice(0, 10).map((p) => `<li><div class="grow">${relDay(p.x)}</div><span class="num">${fmt(p.top.weight)} × ${p.top.reps}</span></li>`).join('')}</ul>`, null, { hideSave: true });
   }
 
+  // ---------- Apple Health import (via an Apple Shortcut that copies a text summary) ----------
+  function healthImportForm(prefill = '') {
+    openModal(`<h2>⌚ Import from Apple Health</h2>
+      <p class="hint" style="margin-top:0">Run your <strong>Gritty Fit Health</strong> Shortcut first, then tap Paste.</p>
+      <button class="btn primary block" data-modal-action="health-paste">Paste from Shortcut</button>
+      <details style="margin:10px 0"><summary class="sub" style="cursor:pointer">Paste didn't work? Paste it here instead</summary>
+        <textarea id="health-text" placeholder="GRITTYFIT&#10;Steps: 8432&#10;…" style="margin-top:8px;min-height:90px">${esc(prefill)}</textarea></details>
+      <div id="health-preview"></div>`, (fd) => applyHealthImport(fd), { saveLabel: 'Import' });
+    $('#health-text').addEventListener('input', (e) => previewHealth(e.target.value));
+    if (prefill) previewHealth(prefill);
+  }
+  let healthParsed = null;
+  modalActions['health-paste'] = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      $('#health-text').value = text;
+      previewHealth(text);
+    } catch (e) {
+      const d = $('#modal-form details'); if (d) d.open = true;
+      toast('Couldn\'t read the clipboard. Long-press the box and Paste.');
+    }
+  };
+  function previewHealth(text) {
+    const r = HealthImport.parse(text);
+    healthParsed = r;
+    const box = $('#health-preview');
+    if (!r.ok) { box.innerHTML = text.trim() ? '<p class="hint">That doesn\'t look like the Shortcut\'s output. It should start with GRITTYFIT.</p>' : ''; return; }
+    const t = todayISO();
+    const u = wUnit();
+    const wConv = r.weight == null ? null : r.weightUnit && r.weightUnit !== u ? round1(r.weightUnit === 'kg' ? r.weight / 0.45359237 : r.weight * 0.45359237) : round1(r.weight);
+    r.weightConv = wConv;
+    const check = (name, label, val, on = true, extra = '') => val == null ? '' : `<label class="check"><input type="checkbox" name="${name}" ${on ? 'checked' : ''}><span><strong>${label}</strong> ${val}${extra}</span></label>`;
+    const dupKey = (w) => `${w.date}T${w.time}|${w.rawName || w.name}`;
+    const have = new Set(S.workouts.map((w) => w.healthKey).filter(Boolean));
+    let h = `<div class="card" style="background:var(--surface-2);margin-top:12px">
+      ${field('Daily totals are for', `<select name="hdate"><option value="${t}">Today, ${prettyDate(t)}</option><option value="${addDays(t, -1)}">Yesterday, ${prettyDate(addDays(t, -1))}</option></select>`)}
+      ${check('h_steps', 'Steps', r.steps != null ? fmt(r.steps, 0) : null)}
+      ${check('h_active', 'Active calories', r.active != null ? fmt(r.active, 0) + ' kcal' : null)}
+      ${check('h_sleep', 'Sleep', r.sleepMin != null ? fmtSleep(r.sleepMin) : null)}
+      ${check('h_rhr', 'Resting heart rate', r.rhr != null ? r.rhr + ' bpm' : null)}
+      ${check('h_weight', 'Weigh-in', wConv != null ? `${fmt(wConv)} ${u}` : null, true, r.bodyFat != null ? ` · ${fmt(r.bodyFat)}% fat` : '')}
+      ${r.workouts.map((w, i) => { const dup = have.has(dupKey(w)); return check('h_w' + i, '⌚ ' + esc(w.rawName || w.name), [w.date ? relDay(w.date) + (w.time ? ' ' + w.time : '') : '', w.minutes ? w.minutes + ' min' : '', w.kcal ? w.kcal + ' kcal' : ''].filter(Boolean).join(' · '), !dup, dup ? ' <span class="sub">(already imported)</span>' : ''); }).join('')}
+      </div>`;
+    // habits that will be ticked
+    const ticks = habitsFromHealth(r, false);
+    if (ticks.length) h += `<p class="hint">Will also check off: ${ticks.map((x) => '<strong>' + esc(x.name) + '</strong>').join(', ')}</p>`;
+    box.innerHTML = h;
+  }
+  // Habits whose names mention steps/sleep with a number, e.g. "10,000 steps", "10k steps", "7+ hours sleep"
+  function habitsFromHealth(r) {
+    const out = [];
+    activeHabits().forEach((hb) => {
+      const n = hb.name.toLowerCase();
+      if (/step/.test(n) && r.steps != null) {
+        const m = n.replace(/(\d),(\d{3})/g, '$1$2').match(/(\d+(?:\.\d+)?)\s*(k\b)?/);
+        const target = m ? Number(m[1]) * (m[2] ? 1000 : 1) : null;
+        if (target && r.steps >= target) out.push(hb);
+      } else if (/sleep/.test(n) && r.sleepMin != null) {
+        const m = n.match(/(\d+(?:\.\d+)?)/);
+        if (m && r.sleepMin / 60 >= Number(m[1])) out.push(hb);
+      }
+    });
+    return out;
+  }
+  function applyHealthImport(fd) {
+    const r = healthParsed;
+    if (!r || !r.ok) { toast('Paste the Shortcut\'s output first'); return false; }
+    const date = fd.get('hdate') || todayISO();
+    const on = (k) => fd.get(k) === 'on';
+    const day = S.health[date] || (S.health[date] = {});
+    const done = [];
+    if (on('h_steps')) { day.steps = r.steps; done.push('steps'); }
+    if (on('h_active')) { day.active = r.active; done.push('active calories'); }
+    if (on('h_sleep')) { day.sleepMin = r.sleepMin; done.push('sleep'); }
+    if (on('h_rhr')) { day.rhr = r.rhr; done.push('resting HR'); }
+    day.at = new Date().toISOString();
+    if (on('h_weight') && r.weightConv != null) {
+      const existing = S.body.find((b) => b.date === date && (b.source === 'Apple Health' || b.weight === r.weightConv));
+      const rec = { ...(existing || { id: uid(), date, notes: '' }), weight: r.weightConv, source: 'Apple Health' };
+      if (r.bodyFat != null) rec.bodyFat = r.bodyFat;
+      if (existing) Object.assign(existing, rec); else S.body.push(rec);
+      done.push('weigh-in');
+    }
+    let added = 0;
+    r.workouts.forEach((w, i) => {
+      if (!on('h_w' + i)) return;
+      const key = `${w.date}T${w.time}|${w.rawName || w.name}`;
+      if (S.workouts.some((x) => x.healthKey === key)) return;
+      S.workouts.push({ id: uid(), type: w.name, minutes: w.minutes, kcal: w.kcal, avgHr: w.avgHr, intensity: null, exercises: '',
+        notes: w.rawName && w.rawName !== w.name ? w.rawName : '', date: w.date || date, time: w.time || '', source: 'Apple Health', healthKey: key });
+      added++;
+    });
+    if (added) done.push(`${added} workout${added > 1 ? 's' : ''}`);
+    const log = S.habitLog[date] || (S.habitLog[date] = []);
+    const ticked = habitsFromHealth({ steps: on('h_steps') ? r.steps : null, sleepMin: on('h_sleep') ? r.sleepMin : null }).filter((hb) => !log.includes(hb.id));
+    ticked.forEach((hb) => log.push(hb.id));
+    save();
+    toast(done.length ? `Imported ${done.join(', ')}${ticked.length ? ` · ✓ ${ticked.length} habit${ticked.length > 1 ? 's' : ''}` : ''}` : 'Nothing selected');
+  }
+  modalActions['health-import'] = () => { modal.close(); setTimeout(() => healthImportForm(), 0); };
+
   function habitForm() {
     openModal(`<h2>New daily habit</h2>${field('Habit', inText('name', '', 'required autofocus placeholder="e.g. No snacking after 8pm"'))}`, (fd) => {
       S.habits.push({ id: uid(), name: fd.get('name').trim(), active: true }); save();
@@ -971,6 +1085,7 @@
     'del-food': (el) => { S.food = S.food.filter((x) => x.id !== el.dataset.id); save(); render(); },
     'food-day': (el) => { ui.foodDate = addDays(ui.foodDate, +el.dataset.delta); if (ui.foodDate > todayISO()) ui.foodDate = todayISO(); render(); },
     'add-workout': () => workoutForm(),
+    'health-import': () => healthImportForm(),
     'repeat-workout': (el) => { const w = find('workouts', el.dataset.id); workoutForm({ ...w, id: undefined, date: todayISO(), notes: '' }); },
     'lift-chart': (el) => liftChart(el.dataset.key),
     'review-week': (el) => { const cur = weekStart(todayISO()); let n = addDays(ui.reviewWeek || cur, +el.dataset.delta); if (n > cur) n = cur; ui.reviewWeek = n; render(); },
@@ -1050,6 +1165,7 @@
     try {
       S = (await DB.getState()) || DEFAULT_STATE();
       S = Object.assign(DEFAULT_STATE(), S, { settings: Object.assign(DEFAULT_STATE().settings, S.settings) });
+      if (!S.health) S.health = {};
     } catch (e) {
       $('#view').innerHTML = `<div class="card"><p>Could not open on-device storage (${esc(e.message)}). Private browsing mode can block it.</p></div>`;
       return;
