@@ -21,7 +21,7 @@
   const relDay = (iso) => { const diff = daysBetween(iso, todayISO()); return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : prettyDate(iso); };
   const byDateDesc = (a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || ''));
 
-  const APP_VERSION = '2026.11.02-b';
+  const APP_VERSION = '2026.11.02-c';
   // ---------- state ----------
   const DEFAULT_STATE = () => ({
     version: 1,
@@ -59,7 +59,7 @@
   let toastTimer;
   function toast(msg) {
     const t = $('#toast');
-    t.textContent = msg;
+    t.textContent = msg; t.onclick = null; t.style.pointerEvents = '';
     t.classList.add('show');
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
@@ -1219,6 +1219,24 @@
 
   if (window.Editor) Editor.init({ esc, render, toast, setTab, openModal, ui, views, actions, TITLES, PARENT });
 
+  // ---------- app updates ----------
+  // Check for a new version every time the app is opened or brought back to the front. When one is
+  // installed, reload into it (unless the person is mid-workout or filling in a form; then offer a button).
+  function setupUpdates() {
+    let reg = null, reloading = false;
+    const hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((r) => { reg = r; r.update().catch(() => {}); }).catch(() => {});
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && reg) reg.update().catch(() => {}); });
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloading || !hadController) return; // first install: nothing to refresh
+      if (!modal.open && ui.tab !== 'session' && ui.tab !== 'editor') { reloading = true; location.reload(); return; }
+      const t = $('#toast');
+      t.innerHTML = 'GRIT updated · <u>tap to refresh</u>';
+      t.classList.add('show'); t.style.pointerEvents = 'auto';
+      t.onclick = () => { reloading = true; location.reload(); };
+    });
+  }
+
   async function boot() {
     try {
       S = (await DB.getState()) || DEFAULT_STATE();
@@ -1236,7 +1254,7 @@
     Training.preload();
     if (window.Cloud) Cloud.start().catch((e) => console.warn('cloud', e));
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
-    if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+    if ('serviceWorker' in navigator && location.protocol !== 'file:') setupUpdates();
   }
   boot();
 })();

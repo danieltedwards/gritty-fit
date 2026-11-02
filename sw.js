@@ -1,20 +1,34 @@
-// Offline support: cache the app shell, serve it when there's no network.
-// Bump VERSION whenever app files change so phones pick up the update.
-const VERSION = 'grit-v10';
+// Offline support + reliable updates.
+// - Every request for the app's own files goes to the server first, *revalidating* (cache: 'no-cache'),
+//   so a new version shows up the next time the app opens — even in an installed Android/iPhone app,
+//   where GitHub Pages' 10-minute browser cache would otherwise serve old files.
+// - If there's no connection, the last copy saved here is used (works offline / in the gym basement).
+// Bump VERSION whenever app files change.
+const VERSION = 'grit-v11';
 const SHELL = ['./', 'index.html', 'app.css', 'db.js', 'charts.js', 'food-lookup.js', 'health.js', 'training.js', 'cloud.js', 'editor.js', 'app.js', 'config.js', 'vendor/supabase.js', 'plans/index.json', 'plans/pbbsw-phase-1.json', 'manifest.webmanifest', 'icon.svg', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(VERSION)
+    .then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' }))))
+    .then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
 });
-// Network first (so updates show up), cache as fallback (so it works offline / in the gym basement).
+self.addEventListener('message', (e) => { if (e.data === 'skipWaiting') self.skipWaiting(); });
 self.addEventListener('fetch', (e) => {
-  if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
+  const req = e.request;
+  if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
+  // navigation requests can't be re-created with options, so fetch them by URL
+  const fresh = req.mode === 'navigate'
+    ? fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' })
+    : fetch(new Request(req, { cache: 'no-cache' }));
   e.respondWith(
-    fetch(e.request)
-      .then((res) => { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(e.request, copy)); return res; })
-      .catch(() => caches.match(e.request, { ignoreSearch: true }).then((r) => r || caches.match('index.html')))
+    fresh
+      .then((res) => {
+        if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(req.mode === 'navigate' ? './' : req, copy)); }
+        return res;
+      })
+      .catch(() => caches.match(req, { ignoreSearch: true }).then((r) => r || caches.match('./') || caches.match('index.html')))
   );
 });
