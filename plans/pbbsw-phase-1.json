@@ -1,0 +1,690 @@
+{
+ "schema": 1,
+ "id": "pbbsw-phase-1",
+ "name": "Project Big Booty, Snatched Waist",
+ "phase": "Phase I – Foundation & Rebuild",
+ "subtitle": "12-Week Glute Priority Strength & Hypertrophy Program",
+ "coach": "Dan Edwards",
+ "weeks": 12,
+ "cycleWeeks": 6,
+ "daysPerWeek": "4 + 1 optional",
+ "tags": [
+  "Glutes",
+  "Strength",
+  "Hypertrophy",
+  "Fat loss"
+ ],
+ "summary": "Build an athletic, feminine physique with progressive strength training, hypertrophy, strategic conditioning and consistent execution. A 6-week static block: progress comes from better execution, strength and progressive overload, not changing exercises.",
+ "weekGuide": [
+  {
+   "weeks": [
+    1,
+    2
+   ],
+   "label": "Movement quality",
+   "effort": "Main lifts 2–3 RIR",
+   "note": "Learn each movement, slow every rep, choose weights that allow perfect execution. Don't chase heavy numbers yet."
+  },
+  {
+   "weeks": [
+    3,
+    4,
+    5
+   ],
+   "label": "Build",
+   "effort": "Main lifts 1–2 RIR",
+   "note": "Double progression: same weight until every set hits the top of the range, then add load."
+  },
+  {
+   "weeks": [
+    6
+   ],
+   "label": "Deload",
+   "effort": "Loads −10–20%, every set 3+ RIR",
+   "note": "Same exercises. Keep every rep technically perfect. Recover and prepare for the next phase.",
+   "deload": true
+  }
+ ],
+ "progression": {
+  "main": {
+   "type": "double",
+   "text": "5 sets × 5–8. Stay at the same weight until all five sets reach 8 quality reps, then add load and restart at 5."
+  },
+  "accessory": {
+   "type": "double",
+   "text": "4 sets × 8–12. Add weight only after all four sets reach the top of the range with excellent technique."
+  },
+  "isolation": {
+   "type": "double",
+   "text": "3–4 sets × 12–20. Final sets may approach technical failure with good form."
+  }
+ },
+ "warmups": {
+  "lower": {
+   "name": "Lower Body Primer",
+   "note": "Activation, not fatigue. Finish with two progressive warm-up sets of the first exercise.",
+   "items": [
+    {
+     "name": "Mini-Band Lateral Walks",
+     "dose": "2×15 each direction"
+    },
+    {
+     "name": "Quadruped Hip Extensions",
+     "dose": "2×12 each leg, 2-sec squeeze"
+    },
+    {
+     "name": "Bodyweight Frog Pumps",
+     "dose": "2×20"
+    },
+    {
+     "name": "Warm-up sets of first exercise",
+     "dose": "2 progressive sets"
+    }
+   ]
+  }
+ },
+ "cardio": {
+  "perWeek": [
+   3,
+   4
+  ],
+  "minutes": [
+   20,
+   40
+  ],
+  "options": [
+   "StairMaster",
+   "Weighted Rucking",
+   "Incline Walking",
+   "Outdoor Hiking"
+  ],
+  "note": "Improve conditioning and body composition without compromising recovery."
+ },
+ "days": [
+  {
+   "id": "d1",
+   "label": "Day 1",
+   "name": "Build the Shelf",
+   "warmup": "lower",
+   "focus": "Own every lockout. Every hip thrust should finish with a hard glute contraction—not lower back extension.",
+   "blocks": [
+    {
+     "type": "single",
+     "exercises": [
+      {
+       "id": "hip-thrust",
+       "name": "Smith Machine Hip Thrust",
+       "sets": 5,
+       "reps": "5–8",
+       "role": "main",
+       "tempo": "3-1-X-3",
+       "rest": "2 min"
+      }
+     ]
+    },
+    {
+     "type": "single",
+     "exercises": [
+      {
+       "id": "leg-press-hw",
+       "name": "High & Wide Leg Press (Glute Bias)",
+       "sets": 4,
+       "reps": "8–12",
+       "role": "accessory",
+       "tempo": "3-1-1-1",
+       "rest": "90 sec"
+      }
+     ]
+    },
+    {
+     "type": "single",
+     "exercises": [
+      {
+       "id": "reverse-lunge",
+       "name": "Reverse Lunge",
+       "sets": 4,
+       "reps": "12",
+       "role": "accessory",
+       "tempo": "3-1-1-1",
+       "rest": "60 sec",
+       "each": true,
+       "notes": "Stay on one leg before switching. Slight forward torso lean. Use a dowel for balance if needed."
+      }
+     ]
+    },
+    {
+     "type": "superset",
+     "rest": "60 sec",
+     "note": "No rest between exercises. Rest 60 seconds after each round.",
+     "exercises": [
+      {
+       "id": "hip-abduction",
+       "name": "Hip Abduction Machine",
+       "sets": 4,
+       "reps": "12–15",
+       "role": "isolation",
+       "tempo": "2-1-2-3"
+      },
+      {
+       "id": "frog-pumps",
+       "name": "Frog Pumps or Glute Bridge",
+       "sets": 4,
+       "reps": "20–30",
+       "role": "isolation"
+      }
+     ]
+    },
+    {
+     "type": "single",
+     "name": "Core",
+     "exercises": [
+      {
+       "id": "leg-raise-drop",
+       "name": "Power Tower Straight Leg Raise → Knee Raise Drop Set",
+       "sets": 3,
+       "reps": "to failure",
+       "role": "core",
+       "notes": "2–3 rounds to technical failure.",
+       "bodyweight": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "d2",
+   "label": "Day 2",
+   "name": "Build the Frame",
+   "blocks": [
+    {
+     "type": "single",
+     "exercises": [
+      {
+       "id": "incline-bench",
+       "name": "Incline Barbell Bench Press (Pause at Chest)",
+       "sets": 5,
+       "reps": "5–8",
+       "role": "main",
+       "tempo": "3-1-X-1",
+       "rest": "2 min"
+      }
+     ]
+    },
+    {
+     "type": "single",
+     "exercises": [
+      {
+       "id": "lat-pulldown-ng",
+       "name": "Neutral-Grip Lat Pulldown",
+       "sets": 4,
+       "reps": "8–12",
+       "role": "accessory",
+       "tempo": "2-1-2-1",
+       "rest": "60 sec"
+      }
+     ]
+    },
+    {
+     "type": "single",
+     "exercises": [
+      {
+       "id": "db-shoulder-press",
+       "name": "Seated Dumbbell Shoulder Press",
+       "sets": 4,
+       "reps": "12–15",
+       "role": "accessory",
+       "rest": "60 sec"
+      }
+     ]
+    },
+    {
+     "type": "single",
+     "exercises": [
+      {
+       "id": "cs-db-row",
+       "name": "Chest-Supported Dumbbell Row",
+       "sets": 4,
+       "reps": "12–15",
+       "role": "accessory",
+       "tempo": "3-1-2-1",
+       "rest": "60 sec"
+      }
+     ]
+    },
+    {
+     "type": "superset",
+     "rest": "60 sec",
+     "note": "Rest 60 seconds after each round.",
+     "exercises": [
+      {
+       "id": "pec-deck",
+       "name": "Pec Deck Fly",
+       "sets": 4,
+       "reps": "15–20",
+       "role": "isolation"
+      },
+      {
+       "id": "reverse-pec-deck",
+       "name": "Reverse Pec Deck Fly",
+       "sets": 4,
+       "reps": "15–20",
+       "role": "isolation"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "d3",
+   "label": "Day 3",
+   "name": "Build the Engine",
+   "warmup": "lower",
+   "focus": "Control every eccentric. Precision builds strength and muscle.",
+   "blocks": [
+    {
+     "type": "single",
+     "exercises": [
+      {
+       "id": "hb-squat",
+       "name": "High-Bar Back Squat",
+       "sets": 5,
+       "reps": "5–8",
+       "role": "main",
+       "tempo": "4-2-X-1",
+       "rest": "2 min"
+      }
+     ]
+    },
+    {
+     "type": "single",
+     "exercises": [
+      {
+       "id": "rdl",
+       "name": "Romanian Deadlift",
+       "sets": 4,
+       "reps": "8",
+       "role": "accessory",
+       "tempo": "5-1-1-0",
+       "rest": "90 sec",
+       "effort": "RPE 7"
+      }
+     ]
+    },
+    {
+     "type": "single",
+     "exercises": [
+      {
+       "id": "smith-rfess",
+       "name": "Smith Machine Rear Foot Elevated Split Squat",
+       "sets": 4,
+       "reps": "8",
+       "role": "accessory",
+       "tempo": "4-1-2-1",
+       "rest": "60 sec",
+       "each": true
+      }
+     ]
+    },
+    {
+     "type": "single",
+     "exercises": [
+      {
+       "id": "seated-ham-curl",
+       "name": "Seated Hamstring Curl",
+       "sets": 4,
+       "reps": "6–8",
+       "role": "accessory",
+       "rest": "60 sec"
+      }
+     ]
+    },
+    {
+     "type": "single",
+     "exercises": [
+      {
+       "id": "back-ext-45",
+       "name": "45° Back Extension (Glute Bias)",
+       "sets": 4,
+       "reps": "10–12",
+       "role": "accessory",
+       "tempo": "3-1-2-2",
+       "rest": "60 sec"
+      }
+     ]
+    },
+    {
+     "type": "single",
+     "exercises": [
+      {
+       "id": "dead-bug",
+       "name": "Dead Bug Variation",
+       "sets": 3,
+       "reps": "10–12",
+       "role": "core",
+       "each": true,
+       "bodyweight": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "d4",
+   "label": "Day 4",
+   "name": "Build the Booty",
+   "warmup": "lower",
+   "focus": "Chase the burn, not the weight. Every rep should create tension.",
+   "blocks": [
+    {
+     "type": "superset",
+     "name": "Block 1 — Mechanical Tension",
+     "rest": "60 sec",
+     "note": "No rest between exercises. Rest 60 seconds after each round.",
+     "exercises": [
+      {
+       "id": "db-sumo-squat",
+       "name": "DB Sumo Squat",
+       "sets": 10,
+       "reps": "10",
+       "role": "accessory"
+      },
+      {
+       "id": "db-rdl",
+       "name": "DB Romanian Deadlift",
+       "sets": 10,
+       "reps": "10",
+       "role": "accessory"
+      }
+     ]
+    },
+    {
+     "type": "superset",
+     "name": "Block 2 — Lengthened Position",
+     "rest": "60 sec",
+     "note": "Complete one leg through both exercises before switching. Rest 60 seconds after both legs.",
+     "exercises": [
+      {
+       "id": "db-step-up",
+       "name": "DB Step-Up",
+       "sets": 4,
+       "reps": "10–12",
+       "role": "accessory",
+       "tempo": "3-1-2-1",
+       "each": true
+      },
+      {
+       "id": "cable-kickback",
+       "name": "Cable Glute Kickback",
+       "sets": 4,
+       "reps": "10–12",
+       "role": "isolation",
+       "tempo": "2-1-2-3",
+       "each": true
+      }
+     ]
+    },
+    {
+     "type": "superset",
+     "name": "Block 3 — Metabolic Stress",
+     "rest": "60 sec",
+     "note": "Rest 60 seconds after each round.",
+     "exercises": [
+      {
+       "id": "reverse-hyper",
+       "name": "Reverse Hyperextension",
+       "sets": 3,
+       "reps": "15–20",
+       "role": "isolation"
+      },
+      {
+       "id": "db-thrusters",
+       "name": "DB Thrusters",
+       "sets": 3,
+       "reps": "15–20",
+       "role": "isolation"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "d5",
+   "label": "Day 5",
+   "name": "Cleanup Day",
+   "optional": true,
+   "freeform": true,
+   "focus": "Completely optional. Bring up any areas that need extra work. Keep it light, enjoyable and pump-focused.",
+   "suggestions": [
+    "Shoulders",
+    "Upper Back",
+    "Triceps",
+    "Biceps",
+    "Core",
+    "20–30 min cardio"
+   ],
+   "blocks": []
+  }
+ ],
+ "sections": [
+  {
+   "title": "Program mission",
+   "body": [
+    {
+     "p": "Build an athletic, feminine physique by combining progressive strength training, hypertrophy, strategic conditioning and consistent execution."
+    },
+    {
+     "ul": [
+      "Build larger, rounder glutes",
+      "Improve upper glute shelf development",
+      "Improve glute medius development to minimize the appearance of hip dips",
+      "Develop stronger, more visible abdominal muscles",
+      "Build a defined back and shoulders",
+      "Maintain upper chest development",
+      "Reduce body fat while preserving muscle",
+      "Improve movement quality and mind-muscle connection"
+     ]
+    },
+    {
+     "p": "This is a 6-week static training block. Exercises remain the same so progress comes from better execution, improved technique, increased strength and progressive overload—not constantly changing exercises."
+    }
+   ]
+  },
+  {
+   "title": "First 2 weeks",
+   "body": [
+    {
+     "p": "Because of the recent surgery, the first two weeks are a movement quality phase."
+    },
+    {
+     "ul": [
+      "Learning each movement",
+      "Improving glute recruitment",
+      "Slowing every repetition",
+      "Choosing weights that allow perfect execution",
+      "Leaving the gym feeling better than you walked in"
+     ]
+    },
+    {
+     "p": "Do not chase heavy numbers yet."
+    }
+   ]
+  },
+  {
+   "title": "Main lift progression",
+   "body": [
+    {
+     "p": "5 sets × 5–8 reps, double progression. Remain at the same weight until all five sets reach eight quality repetitions. Then increase the load and restart at five repetitions."
+    },
+    {
+     "table": {
+      "head": [
+       "Weeks",
+       "Effort"
+      ],
+      "rows": [
+       [
+        "1–2",
+        "2–3 RIR"
+       ],
+       [
+        "3–5",
+        "1–2 RIR"
+       ],
+       [
+        "6",
+        "Deload"
+       ]
+      ]
+     }
+    },
+    {
+     "p": "Never sacrifice technique for weight."
+    }
+   ]
+  },
+  {
+   "title": "Accessory progression",
+   "body": [
+    {
+     "p": "Primary accessory work: 4 sets × 8–12 reps. Increase weight only after all four sets reach the top of the rep range with excellent technique."
+    },
+    {
+     "p": "Isolation movements generally use 3–4 sets × 12–20 reps. Final isolation sets may approach technical failure while maintaining good form."
+    }
+   ]
+  },
+  {
+   "title": "Tempo standards",
+   "body": [
+    {
+     "table": {
+      "head": [
+       "Exercise",
+       "Tempo"
+      ],
+      "rows": [
+       [
+        "Hip Thrust",
+        "3-1-X-3"
+       ],
+       [
+        "High Bar Squat",
+        "4-2-X-1"
+       ],
+       [
+        "Romanian Deadlift",
+        "5-1-1-0"
+       ],
+       [
+        "RFESS",
+        "4-1-2-1"
+       ],
+       [
+        "DB Step-Up",
+        "3-1-2-1"
+       ],
+       [
+        "Cable Kickback",
+        "2-1-2-3"
+       ],
+       [
+        "Hip Abduction",
+        "2-1-2-3"
+       ],
+       [
+        "Rows",
+        "3-1-2-1"
+       ],
+       [
+        "Pulldowns",
+        "2-1-2-1"
+       ]
+      ]
+     }
+    },
+    {
+     "p": "Tempo is one of the primary progression tools. Slower tempos allow lighter loads while creating a greater hypertrophy stimulus and reinforcing proper movement patterns."
+    },
+    {
+     "p": "How to read tempo: lowering – pause at the bottom – lifting (X = explosive) – pause/squeeze at the top, in seconds."
+    }
+   ]
+  },
+  {
+   "title": "Lower body primer",
+   "body": [
+    {
+     "p": "Complete before every lower-body session."
+    },
+    {
+     "ul": [
+      "Mini-Band Lateral Walks — 2×15 each direction",
+      "Quadruped Hip Extensions — 2×12 each leg with a 2-second squeeze",
+      "Bodyweight Frog Pumps — 2×20"
+     ]
+    },
+    {
+     "p": "Finish with two progressive warm-up sets of the first exercise. The objective is activation, not fatigue."
+    }
+   ]
+  },
+  {
+   "title": "Cardio",
+   "body": [
+    {
+     "p": "Complete 3–4 sessions per week, 20–40 minutes each."
+    },
+    {
+     "ul": [
+      "StairMaster",
+      "Weighted Rucking",
+      "Incline Walking",
+      "Outdoor Hiking"
+     ]
+    },
+    {
+     "p": "Cardio should improve conditioning and body composition without compromising recovery."
+    }
+   ]
+  },
+  {
+   "title": "Recovery",
+   "body": [
+    {
+     "ul": [
+      "7–9 hours of sleep",
+      "Adequate daily protein",
+      "Hydration",
+      "Daily movement",
+      "Stress management"
+     ]
+    },
+    {
+     "p": "Recovery drives adaptation."
+    }
+   ]
+  },
+  {
+   "title": "Week 6 — Deload",
+   "body": [
+    {
+     "p": "Maintain the same exercise selection. Reduce training loads by approximately 10–20%. Keep all repetitions technically perfect. Finish every set with at least 3 reps in reserve."
+    },
+    {
+     "p": "The goal is to recover, reinforce movement quality, and prepare for the next phase."
+    }
+   ]
+  },
+  {
+   "title": "Final reminder",
+   "body": [
+    {
+     "p": "This program rewards patience and consistency. Don't chase heavier weights at the expense of technique. Slow down. Control every repetition. Feel the target muscle working. Trust the process."
+    },
+    {
+     "p": "The goal isn't simply to move weight. The goal is to build the physique you're working toward—one quality rep at a time."
+    }
+   ]
+  }
+ ]
+}

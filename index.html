@@ -17,7 +17,10 @@
 </head>
 <body>
   <header class="topbar">
-    <div>
+    <button class="icon-btn back-btn" id="back-btn" data-action="goto" data-tab="train" aria-label="Back" hidden>
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <div class="topbar-title">
       <div class="eyebrow" id="today-label"></div>
       <h1 id="view-title">Today</h1>
     </div>
@@ -38,11 +41,13 @@
 
   <dialog id="modal"><form method="dialog" id="modal-form"></form></dialog>
   <div id="toast" role="status" aria-live="polite"></div>
+  <div id="rest-timer" role="timer" aria-live="polite"></div>
 
   <script src="db.js"></script>
   <script src="charts.js"></script>
   <script src="food-lookup.js"></script>
   <script src="health.js"></script>
+  <script src="training.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

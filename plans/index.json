@@ -1,0 +1,22 @@
+{
+ "schema": 1,
+ "plans": [
+  {
+   "id": "pbbsw-phase-1",
+   "file": "pbbsw-phase-1.json",
+   "name": "Project Big Booty, Snatched Waist",
+   "phase": "Phase I – Foundation & Rebuild",
+   "subtitle": "12-Week Glute Priority Strength & Hypertrophy Program",
+   "coach": "Dan Edwards",
+   "weeks": 12,
+   "daysPerWeek": "4 + 1 optional",
+   "tags": [
+    "Glutes",
+    "Strength",
+    "Hypertrophy",
+    "Fat loss"
+   ],
+   "summary": "Build an athletic, feminine physique with progressive strength training, hypertrophy, strategic conditioning and consistent execution. A 6-week static block: progress comes from better execution, strength and progressive overload, not changing exercises."
+  }
+ ]
+}

@@ -34,6 +34,8 @@
     ],
     habitLog: {},
     health: {},
+    program: null,
+    activeSession: null,
   });
   let S = null;
   let saveTimer = null;
@@ -132,12 +134,16 @@
     });
     return out;
   }
+  // Sets from a workout: structured sets (plan sessions) or parsed from free text
+  const liftSetsOf = (w) => (w.sets
+    ? w.sets.filter((x) => x.weight && x.reps && x.reps <= 50).map((x) => ({ name: x.name, key: x.name.toLowerCase().replace(/\s+/g, ' ').trim(), reps: x.reps, weight: x.weight, e1rm: round1(x.weight * (1 + x.reps / 30)) }))
+    : parseLifts(w.exercises));
   // Best set per lift across all workouts (optionally excluding one workout id)
   function liftBests(excludeId) {
     const best = new Map();
     S.workouts.forEach((w) => {
       if (w.id === excludeId) return;
-      parseLifts(w.exercises).forEach((l) => {
+      liftSetsOf(w).forEach((l) => {
         const b = best.get(l.key);
         if (!b) best.set(l.key, { name: l.name, key: l.key, weight: l.weight, reps: l.reps, e1rm: l.e1rm, date: w.date, last: w.date, sessions: 1 });
         else {
@@ -165,7 +171,7 @@
     const minutes = ws_.reduce((a, w) => a + (w.minutes || 0), 0);
     const allBests = liftBests(); // PRs this week: all-time best set this week and beats everything before it
     const before = new Map();
-    S.workouts.filter((w) => w.date < ws).forEach((w) => parseLifts(w.exercises).forEach((l) => { const b = before.get(l.key); if (!b || l.weight > b) before.set(l.key, l.weight); }));
+    S.workouts.filter((w) => w.date < ws).forEach((w) => liftSetsOf(w).forEach((l) => { const b = before.get(l.key); if (!b || l.weight > b) before.set(l.key, l.weight); }));
     const prs = [];
     allBests.forEach((b) => { if (b.date >= ws && b.date <= we && before.has(b.key) && b.weight > before.get(b.key)) prs.push(b); });
     const bodyRows = bodySorted().filter((b) => b.weight != null);
@@ -215,6 +221,7 @@
     let h = `<p class="sub" style="margin:0 0 14px">${greet}${st.name ? ', ' + esc(st.name) : ''}. ${strk ? `<strong>${strk}-day</strong> logging streak — keep it alive.` : 'Log anything today to start a streak.'}</p>`;
 
     h += `<div class="quick-row"><button class="btn primary" data-action="add-food">+ Food</button><button class="btn primary" data-action="add-workout">+ Workout</button><button class="btn primary" data-action="add-body">+ Weight</button></div>`;
+    h += Training.todayCard();
     const hd = S.health && (S.health[t] || S.health[addDays(t, -1)]);
     if (hd) {
       const isToday = !!S.health[t];
@@ -329,7 +336,8 @@
     const ws = weekStart(t);
     const thisWeek = workoutsInWeek(ws);
     const mins = thisWeek.reduce((a, w) => a + (w.minutes || 0), 0);
-    let h = `<div class="grid-2"><div class="card"><div class="card-head"><h2>This week</h2></div><div class="big">${new Set(thisWeek.map((w) => w.date)).size}<small> / ${st.workoutsPerWeek} days</small></div></div>
+    let h = Training.trainCard();
+    h += `<div class="grid-2"><div class="card"><div class="card-head"><h2>This week</h2></div><div class="big">${new Set(thisWeek.map((w) => w.date)).size}<small> / ${st.workoutsPerWeek} days</small></div></div>
       <div class="card"><div class="card-head"><h2>Minutes</h2></div><div class="big">${fmt(mins, 0)}<small> min</small></div></div></div>`;
 
     const weeks = [];
@@ -341,15 +349,15 @@
     h += lifts.length ? `<ul class="list">${lifts.slice(0, 12).map((l) => `<li data-action="lift-chart" data-key="${esc(l.key)}" style="cursor:pointer"><div class="grow"><div class="title">${esc(l.name)}</div>
         <div class="meta">PR ${relDay(l.date)} · ${l.sessions} session${l.sessions > 1 ? 's' : ''} · est. 1RM ${fmt(l.e1rm, 0)}</div></div>
         <span class="num">${fmt(l.weight)} × ${l.reps}</span></li>`).join('')}</ul>`
-      : `<div class="empty">Write sets like <strong>Squat 5x5 @ 225</strong> or <strong>Bench 185x5</strong> in a workout and your PRs show up here automatically.</div>`;
+      : `<div class="empty">Log sets in a plan workout, or write sets like <strong>Squat 5x5 @ 225</strong> in a workout, and your PRs show up here automatically.</div>`;
     h += `</div>`;
 
     const list = [...S.workouts].sort(byDateDesc);
     h += `<div class="card"><div class="card-head"><h2>History</h2><button class="btn small primary" data-action="add-workout">+ Add</button></div>`;
     h += list.length ? list.slice(0, 60).map((w) => `<div class="entry"><div class="row" style="justify-content:space-between">
-        <div data-action="edit-workout" data-id="${w.id}" style="cursor:pointer;flex:1"><div class="meta">${w.source === 'Apple Health' ? '⌚ ' : ''}${relDay(w.date)}${w.time ? ' ' + w.time : ''}${w.minutes ? ' · ' + w.minutes + ' min' : ''}${w.kcal ? ' · ' + w.kcal + ' kcal' : ''}${w.avgHr ? ' · ' + w.avgHr + ' bpm' : ''}${w.intensity ? ' · RPE ' + w.intensity : ''}</div>
-        <strong>${esc(w.type)}</strong></div><button class="btn small" style="flex:none" data-action="repeat-workout" data-id="${w.id}">Repeat</button><button class="del" data-action="del-workout" data-id="${w.id}" aria-label="Delete">×</button></div>
-        ${w.exercises ? `<p class="sub">${esc(w.exercises)}</p>` : ''}${w.notes ? `<p>${esc(w.notes)}</p>` : ''}</div>`).join('')
+        <div data-action="${w.sets ? 'view-session' : 'edit-workout'}" data-id="${w.id}" style="cursor:pointer;flex:1"><div class="meta">${w.source === 'Apple Health' ? '⌚ ' : ''}${relDay(w.date)}${w.time ? ' ' + w.time : ''}${w.minutes ? ' · ' + w.minutes + ' min' : ''}${w.kcal ? ' · ' + w.kcal + ' kcal' : ''}${w.avgHr ? ' · ' + w.avgHr + ' bpm' : ''}${w.intensity ? ' · RPE ' + w.intensity : ''}</div>
+        <strong>${esc(w.type)}</strong></div>${w.sets || w.cardio ? '' : `<button class="btn small" style="flex:none" data-action="repeat-workout" data-id="${w.id}">Repeat</button>`}<button class="del" data-action="del-workout" data-id="${w.id}" aria-label="Delete">×</button></div>
+        ${w.sets ? `<p class="sub">${Training.summary(w)}</p>` : w.exercises ? `<p class="sub">${esc(w.exercises)}</p>` : ''}${w.notes ? `<p>${esc(w.notes)}</p>` : ''}</div>`).join('')
       : `<div class="empty">No workouts logged yet.</div>`;
     h += `</div>`;
     return h;
@@ -950,7 +958,7 @@
   function liftChart(key) {
     const pts = [];
     S.workouts.forEach((w) => {
-      const sets = parseLifts(w.exercises).filter((l) => l.key === key);
+      const sets = liftSetsOf(w).filter((l) => l.key === key);
       if (sets.length) pts.push({ x: w.date, y: Math.max(...sets.map((l) => l.e1rm)), top: sets.reduce((a, b) => (b.weight > a.weight ? b : a)) });
     });
     pts.sort((a, b) => a.x.localeCompare(b.x));
@@ -1142,18 +1150,23 @@
 
   // ---------- render ----------
   const TITLES = { today: 'Today', food: 'Food', train: 'Training', body: 'Body', journal: 'Goals & Journal' };
+  const PARENT = {};
   function setTab(tab) {
     ui.tab = tab;
     if (tab === 'food') ui.foodDate = todayISO();
-    try { localStorage.setItem('gf-tab', tab); } catch (_) { /* ignore */ }
+    try { localStorage.setItem('gf-tab', PARENT[tab] && tab !== 'session' ? PARENT[tab] : tab); } catch (_) { /* ignore */ }
     render();
     window.scrollTo(0, 0);
   }
   function render() {
     $('#view-title').textContent = TITLES[ui.tab];
     $('#today-label').textContent = prettyDate(todayISO(), { weekday: 'long', month: 'long', day: 'numeric' });
-    document.querySelectorAll('.tabbar [data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === ui.tab));
+    const navTab = PARENT[ui.tab] || ui.tab;
+    document.querySelectorAll('.tabbar [data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === navTab));
+    $('#back-btn').hidden = !PARENT[ui.tab];
+    $('#back-btn').dataset.tab = PARENT[ui.tab] || '';
     $('#view').innerHTML = views[ui.tab]();
+    Training.afterRender(ui.tab);
     if (ui.tab === 'body' && ui.bodySeg === 'photos') renderPhotos();
   }
 
@@ -1161,6 +1174,11 @@
   let lastDay = todayISO();
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && todayISO() !== lastDay) { lastDay = todayISO(); ui.foodDate = lastDay; render(); }
+  });
+
+  Training.init({
+    getState: () => S, save, render, toast, esc, fmt, uid, todayISO, addDays, daysBetween, weekStart, prettyDate, relDay,
+    openModal, closeModal: () => modal.close(), field, inNum, setTab, liftBests, ui, views, actions, modalActions, TITLES, PARENT,
   });
 
   async function boot() {
@@ -1173,7 +1191,10 @@
       return;
     }
     try { const t = localStorage.getItem('gf-tab'); if (t && views[t]) ui.tab = t; } catch (_) { /* ignore */ }
+    if (ui.tab === 'session' && !S.activeSession) ui.tab = 'train';
+    if ((ui.tab === 'guide' && !ui.guidePlan) || ui.tab === 'plans') ui.tab = 'train';
     render();
+    Training.preload();
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
     if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
   }
