@@ -243,6 +243,7 @@
     return recipeCache;
   }
   async function saveRecipe(row) { const { error } = await sb.from('recipes').upsert(row); if (error) throw error; recipeCache = null; }
+  async function saveRecipes(rows) { const { error } = await sb.from('recipes').upsert(rows); if (error) throw error; recipeCache = null; }
   async function deleteRecipe(id) { const { error } = await sb.from('recipes').delete().eq('id', id); if (error) throw error; recipeCache = null; }
 
   // ---------- progress photos shared with the coach (private storage) ----------
@@ -686,7 +687,7 @@
     },
     changed, settingsSection, saveName, todayCards, usesCloudPlans, fetchPlans, savePlan, deletePlan,
     canSharePhotos, sharePhoto, unsharePhoto, photoUrl,
-    loadRecipes, saveRecipe, deleteRecipe, recipes: () => recipeCache || [], refreshCoach: () => refreshCoach(),
+    loadRecipes, saveRecipe, saveRecipes, deleteRecipe, recipes: () => recipeCache || [], refreshCoach: () => refreshCoach(),
     get user() { return user; }, get profile() { return profile; },
     get configured() { return !!sb; },
     // exposed for tests

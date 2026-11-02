@@ -308,7 +308,13 @@
     const coach = ((window.Cloud && Cloud.recipes && Cloud.recipes()) || []).map((r) => ({ id: r.id, src: 'coach', name: r.data.name, tags: r.data.tags || [], per: r.data.per, recipe: r.data }));
     return [...mine, ...coach].filter((x) => x.per && x.per.kcal != null);
   }
-  const suggestServings = (it, m) => (it.src === 'mine' ? 1 : Math.min(4, Math.max(0.25, r4(m.p && it.per.p ? m.p / it.per.p : 1))));
+  // Scale to the meal's protein; dishes with little protein scale by calories instead. Kept to ½–2½ servings.
+  const suggestServings = (it, m) => {
+    if (it.src === 'mine') return 1;
+    const byP = it.per.p >= 10 && m.p ? m.p / it.per.p : null;
+    const byK = it.per.kcal && m.kcal ? m.kcal / it.per.kcal : 1;
+    return Math.min(2.5, Math.max(0.5, r4(byP || byK)));
+  };
   const scaled = (per, s) => ({ kcal: Math.round(per.kcal * s), p: Math.round(per.p * s), c: Math.round(per.c * s), f: Math.round(per.f * s) });
   function fitScore(x, m) { const rel = (a, b) => Math.abs(a - b) / Math.max(b, 10); return rel(x.p, m.p) + 0.6 * rel(x.c, m.c) + 0.4 * rel(x.f, m.f); }
   const fitText = (x, m) => `<span class="${Math.abs(x.p - m.p) <= Math.max(5, m.p * 0.15) ? 'good' : ''}">P ${x.p}/${m.p}</span> · <span class="${Math.abs(x.c - m.c) <= Math.max(8, m.c * 0.2) ? 'good' : ''}">C ${x.c}/${m.c}</span> · <span class="${Math.abs(x.f - m.f) <= Math.max(4, m.f * 0.25) ? 'good' : ''}">F ${x.f}/${m.f}</span>`;
@@ -327,7 +333,11 @@
       const want = ROLE_TAGS[m.role] || [];
       let items = libraryItems().filter((x) => tab === 'all' || x.src === tab)
         .filter((x) => !q || (x.name + ' ' + x.tags.join(' ')).toLowerCase().includes(q));
-      items = items.map((x) => { const s = suggestServings(x, m); const v = scaled(x.per, s); return { ...x, s, v, score: fitScore(v, m) - (x.tags.some((t) => want.includes(t)) ? 0.3 : 0) }; }).sort((a, b) => a.score - b.score);
+      items = items.map((x) => {
+        const s = suggestServings(x, m); const v = scaled(x.per, s);
+        const stretch = Math.abs(Math.log2(s)) * 0.35; // prefer dishes that fit near one serving
+        return { ...x, s, v, score: fitScore(v, m) + stretch - (x.tags.some((t) => want.includes(t)) ? 0.3 : 0) };
+      }).sort((a, b) => a.score - b.score);
       const box = document.getElementById('lib-list'); if (!box) return;
       box.innerHTML = items.length ? `<ul class="list lib">${items.map((x) => `<li><button data-modal-action="lib-open" data-id="${esc(x.id)}" data-src="${x.src}" data-key="${key}">
           <div class="title">${esc(x.name)} ${x.src === 'coach' ? '<span class="chip">Coach</span>' : '<span class="chip">Mine</span>'}</div>
@@ -356,6 +366,7 @@
         ${r && r.ingredients && r.ingredients.length ? `<div class="res-head">Ingredients (whole recipe, ${r.servings || 1} serving${(r.servings || 1) > 1 ? 's' : ''})</div><ul class="list">${r.ingredients.map((g) => `<li><div class="grow">${esc(g.name)}</div><span class="num">${esc(g.amount || (g.grams ? g.grams + ' g' : ''))}</span></li>`).join('')}</ul>` : ''}
         ${r && r.instructions ? `<div class="res-head">How to make it</div><p style="white-space:pre-wrap;margin-top:4px">${esc(r.instructions)}</p>` : ''}
         ${r && r.prepMin ? `<p class="sub">⏱ ${r.prepMin} min</p>` : ''}
+        ${r && r.source ? `<p class="sub" style="font-size:12px">${esc(r.source)}</p>` : ''}
         <button class="btn primary block" data-modal-action="lib-log" style="margin-top:8px">Log to ${esc(m.label)}</button>
         ${src === 'mine' ? '<button class="btn danger small" data-modal-action="lib-del" style="margin-top:10px">Delete saved meal</button>' : ''}`, null, { hideSave: true });
       const upd = () => { const v = scaled(it.per, s); document.getElementById('lib-s').textContent = src === 'coach' ? fmtQ(s) : `${fmtQ(s)}×`; document.getElementById('lib-fit').innerHTML = `<strong>${v.kcal} kcal</strong> · ${fitText(v, m)}`; };

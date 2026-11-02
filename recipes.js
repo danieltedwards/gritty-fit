@@ -17,7 +17,9 @@
     return t;
   }
   function perServing(r) {
-    if ((!r.ingredients || !r.ingredients.length) && r.per) return r.per;
+    // book recipes list ingredients without macros: keep the per-serving numbers that came with them
+    const counted = (r.ingredients || []).some((g) => g.per100 || +g.kcal || +g.p || +g.c || +g.f);
+    if (!counted && r.per) return r.per;
     const t = totals(r), s = Math.max(1, Number(r.servings) || 1);
     return { kcal: Math.round(t.kcal / s), p: Math.round(t.p / s), c: Math.round(t.c / s), f: Math.round(t.f / s) };
   }
@@ -123,15 +125,20 @@
         const raw = JSON.parse(await input.files[0].text());
         const list = Array.isArray(raw) ? raw : raw.recipes;
         if (!Array.isArray(list) || !list.length) throw new Error('No recipes in that file');
-        let n = 0;
+        const rows = [];
         for (const r of list) {
           if (!r.name) continue;
           const data = { name: r.name, tags: r.tags || [], servings: r.servings || 1, prepMin: r.prepMin || null, ingredients: r.ingredients || [], instructions: r.instructions || '', source: r.source || '' };
-          data.per = r.per && !(r.ingredients && r.ingredients.length) ? r.per : perServing(data);
-          await Cloud.saveRecipe({ id: r.id || `${slug(r.name)}-${rid()}`, data, published: r.published !== false });
-          n++;
+          if (r.per) data.per = r.per;
+          data.per = perServing(data);
+          if (r.servingsEstimated) data.servingsEstimated = true;
+          rows.push({ id: r.id || `${slug(r.name)}-${rid()}`, data, published: r.published !== false });
         }
-        C.toast(`${n} recipe${n === 1 ? '' : 's'} added`); Cloud.refreshCoach();
+        for (let i = 0; i < rows.length; i += 100) {
+          C.toast(`Uploading recipes… ${Math.min(i + 100, rows.length)} / ${rows.length}`);
+          await Cloud.saveRecipes(rows.slice(i, i + 100));
+        }
+        C.toast(`${rows.length} recipe${rows.length === 1 ? '' : 's'} added to your library`); Cloud.refreshCoach();
       } catch (e) { C.toast('Upload failed: ' + e.message); }
     };
     input.click();
