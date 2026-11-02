@@ -632,7 +632,7 @@
     const templates = plans.filter((p) => !p.data.forClient), custom = plans.filter((p) => p.data.forClient);
     const clientName = (id) => { const c = clients.find((x) => x.client_id === id); return c ? (c.full_name || c.email) : 'former client'; };
     h += `<div class="card"><div class="card-head"><h2>Plan library · ${templates.length}</h2><span class="row" style="gap:6px"><button class="btn small primary" data-action="coach-plan-new">+ New</button><button class="btn small" data-action="coach-plan-file">Upload</button></span></div>`;
-    h += templates.length ? templates.map((p) => `<div class="client"><div class="title" style="font-weight:800">${esc(p.data.name)}</div><div class="sub" style="font-size:13px">${esc(p.data.phase || '')} · ${p.data.weeks || '?'} weeks · ${(p.data.days || []).length} days</div>
+    h += templates.length ? templates.map((p) => `<div class="client"><div class="title" style="font-weight:800">${esc(p.data.name)}</div><div class="sub" style="font-size:13px">${esc(p.data.phase || '')} · ${p.data.weeks || '?'} weeks · ${(p.data.days || []).length} days${p.data.schedule ? ' · week by week' : ''}</div>
         <div class="row" style="margin-top:8px">
           <button class="btn small ${p.visibility === 'all' ? 'primary' : ''}" data-action="coach-plan-set" data-id="${esc(p.id)}" data-field="visibility" data-value="all">All clients</button>
           <button class="btn small ${p.visibility === 'assigned' ? 'primary' : ''}" data-action="coach-plan-set" data-id="${esc(p.id)}" data-field="visibility" data-value="assigned">Selected clients</button>

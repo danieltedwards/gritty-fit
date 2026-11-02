@@ -21,7 +21,7 @@
   const relDay = (iso) => { const diff = daysBetween(iso, todayISO()); return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : prettyDate(iso); };
   const byDateDesc = (a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || ''));
 
-  const APP_VERSION = '2026.11.03-g';
+  const APP_VERSION = '2026.11.04-a';
   // ---------- state ----------
   const DEFAULT_STATE = () => ({
     version: 1,
@@ -46,9 +46,13 @@
   function save() {
     if (ui.viewAs) return; // coach viewing a client: read-only, never persisted
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => DB.setState(S).catch((e) => toast('Save failed: ' + e.message)), 150);
+    saveTimer = setTimeout(() => { saveTimer = null; DB.setState(S).catch((e) => toast('Save failed: ' + e.message)); }, 150);
     if (window.Cloud) Cloud.changed();
   }
+  // don't lose the last 150 ms of changes when the app is closed or reloaded
+  const flushSave = () => { if (saveTimer && S && !ui.viewAs) { clearTimeout(saveTimer); saveTimer = null; DB.setState(S).catch(() => {}); } };
+  addEventListener('pagehide', flushSave);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSave(); });
   // write immediately, without triggering a cloud push (used when applying synced changes)
   const saveLocal = () => (ui.viewAs ? Promise.resolve() : DB.setState(S));
 

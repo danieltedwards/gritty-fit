@@ -61,20 +61,25 @@
   const REGIONS = [['lower', 'Lower body'], ['upper', 'Upper body'], ['full', 'Full body'], ['', '—']];
 
   function exerciseHTML(path, ex, i, n, isSuperset) {
+    const allWeeks = ed().data.schedule ? `<div class="row ed-allweeks"><span class="sub">All weeks:</span>
+        <button class="link-btn" data-action="ed-swap-all" data-path="${path}">Swap everywhere</button>
+        <button class="link-btn" data-action="ed-copy-all" data-path="${path}">Copy to every week</button>
+        <button class="link-btn" data-action="ed-del-all" data-path="${path}">Remove everywhere</button></div>` : '';
     return `<div class="ed-ex"><div class="ed-ex-head"><span class="ed-ex-n">${isSuperset ? String.fromCharCode(65 + i) : i + 1}</span>
-        ${inp(path + '.name', ex.name, { ph: 'Exercise name', attrs: 'class="ed-ex-name"' })}${tools(path, { up: i > 0, down: i < n - 1 })}</div>
+        ${inp(path + '.name', ex.name, { ph: 'Exercise name', attrs: 'class="ed-ex-name"' })}${tools(path, { up: i > 0, down: i < n - 1 })}</div>${allWeeks}
       <div class="ed-grid4">${lab('Sets', inp(path + '.sets', ex.sets, { type: 'number', kind: 'int' }))}${lab('Reps', inp(path + '.reps', ex.reps, { ph: '8–12' }))}${lab('Tempo', inp(path + '.tempo', ex.tempo, { ph: '3-1-1-1' }))}${lab('Rest', inp(path + '.rest', ex.rest, { ph: '60 sec' }))}</div>
       <div class="ed-grid2">${lab('Type', inp(path + '.role', ex.role || 'accessory', { type: 'select', options: ROLES }))}${lab('Effort', inp(path + '.effort', ex.effort, { ph: 'RPE 7' }))}</div>
-      ${lab('Coaching cue', inp(path + '.notes', ex.notes, { ph: 'Ribs down, squeeze at the top…' }))}
+      ${lab('Coaching cue', inp(path + '.notes', ex.notes, { type: (ex.notes || '').length > 80 ? 'textarea' : 'text', rows: 3, ph: 'Ribs down, squeeze at the top…' }))}
       <div class="row">${inp(path + '.each', ex.each, { type: 'check', label: 'Each side / leg' })}${inp(path + '.bodyweight', ex.bodyweight, { type: 'check', label: 'Bodyweight' })}${inp(path + '.region', ex.region || '', { type: 'select', options: [['', 'Region: from day'], ['lower', 'Lower body'], ['upper', 'Upper body']] })}</div></div>`;
   }
 
-  function dayHTML(d, di, nDays) {
-    const p = `days.${di}`;
+  function dayHTML(d, di, nDays, base = 'days') {
+    const p = `${base}.${di}`;
     const warmups = Object.entries(ed().data.warmups || {}).map(([k, w]) => [k, w.name]);
     let body = `<div class="ed-grid2">${lab('Label', inp(p + '.label', d.label, { ph: 'Day 1' }))}${lab('Name', inp(p + '.name', d.name, { ph: 'Build the Shelf' }))}</div>
       ${lab('Focus of the day', inp(p + '.focus', d.focus, { type: 'textarea', rows: 2, ph: 'One line that sets the intent…' }))}
       <div class="ed-grid2">${lab('Body region', inp(p + '.region', d.region || '', { type: 'select', options: REGIONS }))}${lab('Warm-up', inp(p + '.warmup', d.warmup || '', { type: 'select', options: [['', 'None'], ...warmups] }))}</div>
+      ${d.instructions != null || ed().data.schedule ? lab('Instructions (conditioning, options, notes)', inp(p + '.instructions', d.instructions, { type: 'textarea', rows: 4, ph: 'Warm-up… Option 1… Cool-down…' })) : ''}
       <div class="row">${inp(p + '.optional', d.optional, { type: 'check', label: 'Optional day' })}${inp(p + '.freeform', d.freeform, { type: 'check', label: 'Client adds own exercises' })}</div>`;
     if (d.freeform) body += lab('Suggestions (comma separated)', inp(p + '.suggestions', (d.suggestions || []).join(', '), { kind: 'list', ph: 'Shoulders, Core, 20 min cardio' }));
     (d.blocks || []).forEach((b, bi) => {
@@ -91,7 +96,7 @@
     });
     body += `<button class="btn small block" data-action="ed-add" data-path="${p}.blocks" data-kind="block">+ Add block (exercise or superset)</button>`;
     const summary = `<span><strong>${esc(d.label || 'Day')}</strong> · ${esc(d.name || 'Untitled')} <span class="sub">${(d.blocks || []).reduce((a, b) => a + (b.exercises || []).length, 0)} exercises${d.optional ? ' · optional' : ''}</span></span>${tools(p, { up: di > 0, down: di < nDays - 1 })}`;
-    return details('day-' + (d.id || di), summary, body);
+    return details('day-' + (d.id || di) + (base === 'days' ? '' : '-' + base), summary, body);
   }
 
   function viewEditor() {
@@ -115,8 +120,19 @@
         ${lab('Effort', inp(`weekGuide.${i}.effort`, g.effort, { ph: 'Main lifts 2–3 RIR' }))}${lab('Note', inp(`weekGuide.${i}.note`, g.note, { type: 'textarea', rows: 2 }))}
         <div class="row" style="justify-content:space-between">${inp(`weekGuide.${i}.deload`, g.deload, { type: 'check', label: 'Deload week' })}${tools(`weekGuide.${i}`, { up: i > 0, down: i < d.weekGuide.length - 1 })}</div></div>`).join('')
       + `<button class="btn small block" data-action="ed-add" data-path="weekGuide" data-kind="week">+ Add phase</button><p class="hint">Weeks count within a block (e.g. 1-2, 3-5, 6); they repeat for each block.</p>`);
-    h += `<div class="res-head" style="margin:18px 0 8px">Training days</div>` + (d.days || []).map((day, i) => dayHTML(day, i, d.days.length)).join('')
-      + `<button class="btn block" data-action="ed-add" data-path="days" data-kind="day" style="margin-bottom:14px">+ Add day</button>`;
+    if (d.schedule && d.schedule.length) {
+      const nW = d.weeks || Math.max(...d.schedule.flatMap((x) => x.weeks || [1]));
+      const w = Math.min(Math.max(E.week || 1, 1), nW);
+      let si = d.schedule.findIndex((x) => (x.weeks || []).includes(w)); if (si < 0) si = 0;
+      const entry = d.schedule[si];
+      h += `<div class="res-head" style="margin:18px 0 8px">Training days · week by week</div>
+        <div class="card"><div class="week-picker">${Array.from({ length: nW }, (_, i) => i + 1).map((x) => `<button class="chip ${x === w ? 'strong' : ''}" data-action="ed-week" data-w="${x}">${x}</button>`).join('')}</div>
+        <p class="hint" style="margin:8px 0 0">Editing week ${w}${entry.weeks.length > 1 ? ` (shared by weeks ${weeksToText(entry.weeks)})` : ''}. Changes apply to this week only. Use the "All weeks" links on an exercise to swap or remove it everywhere, or copy it to the same day in every week.</p></div>`
+        + (entry.days || []).map((day, i) => dayHTML(day, i, entry.days.length, `schedule.${si}.days`)).join('');
+    } else {
+      h += `<div class="res-head" style="margin:18px 0 8px">Training days</div>` + (d.days || []).map((day, i) => dayHTML(day, i, d.days.length)).join('')
+        + `<button class="btn block" data-action="ed-add" data-path="days" data-kind="day" style="margin-bottom:14px">+ Add day</button>`;
+    }
     const c = d.cardio;
     h += details('weekly', `<strong>Each week: cardio & extras</strong> <span class="sub">${(d.extras || []).length} extras</span>`,
       (c ? `<div class="ed-row"><div class="row" style="justify-content:space-between"><strong>Cardio</strong><button class="link-btn" data-action="ed-cardio-off">Remove</button></div>
@@ -183,18 +199,31 @@
     wuitem: () => ({ name: '', dose: '' }),
   };
 
+  // clean a list of days; exercise ids are unique within a day and stay the same across days/weeks (history follows ids)
+  function cleanDays(days) {
+    const out = (days || []).map((d) => ({ ...d, blocks: (d.blocks || []).map((b) => ({ ...b, exercises: (b.exercises || []).filter((x) => x.name && x.name.trim()) })).filter((b) => b.exercises.length || false) }));
+    out.forEach((d) => {
+      if (d.instructions === '' || d.instructions == null) delete d.instructions;
+      const used = new Set();
+      d.blocks.forEach((b) => b.exercises.forEach((x) => {
+        if (!x.id || x.id.startsWith('new-')) { let base = slug(x.name), id = base, n = 2; while (used.has(id)) id = `${base}-${n++}`; x.id = id; }
+        while (used.has(x.id)) x.id = x.id + '-' + rid();
+        used.add(x.id);
+        Object.keys(x).forEach((k) => { if (x[k] === '' || x[k] === null || x[k] === false) delete x[k]; });
+        x.name = x.name.trim(); if (!x.sets) x.sets = 3; if (!x.reps) x.reps = '10';
+      }));
+    });
+    return out;
+  }
   function finalize(data) {
     const out = clone(data);
-    out.days = (out.days || []).map((d) => ({ ...d, blocks: (d.blocks || []).map((b) => ({ ...b, exercises: (b.exercises || []).filter((x) => x.name && x.name.trim()) })).filter((b) => b.exercises.length) }));
-    // give new exercises stable ids from their names (history and PRs follow ids)
-    const used = new Set();
-    out.days.forEach((d) => d.blocks.forEach((b) => b.exercises.forEach((x) => {
-      if (!x.id || x.id.startsWith('new-')) { let base = slug(x.name), id = base, n = 2; while (used.has(id)) id = `${base}-${n++}`; x.id = id; }
-      while (used.has(x.id)) x.id = x.id + '-' + rid();
-      used.add(x.id);
-      Object.keys(x).forEach((k) => { if (x[k] === '' || x[k] === null || x[k] === false) delete x[k]; });
-      x.name = x.name.trim(); if (!x.sets) x.sets = 3; if (!x.reps) x.reps = '10';
-    })));
+    if (out.schedule && out.schedule.length) {
+      out.schedule = out.schedule.map((e) => ({ ...e, days: cleanDays(e.days) }));
+      const first = out.schedule.find((e) => (e.weeks || []).includes(1)) || out.schedule[0];
+      out.days = clone(first.days);
+    } else {
+      out.days = cleanDays(out.days);
+    }
     (out.weekGuide || []).forEach((g) => { if (!g.deload) delete g.deload; });
     out.weekGuide = (out.weekGuide || []).filter((g) => g.weeks && g.weeks.length);
     out.sections = (out.sections || []).filter((s) => s.title && s.title.trim());
@@ -226,6 +255,33 @@
       const arr = getAt(ed().data, arrPath), j = idx + Number(el.dataset.dir);
       if (j < 0 || j >= arr.length) return;
       [arr[idx], arr[j]] = [arr[j], arr[idx]]; ed().dirty = true; rerender();
+    },
+    'ed-week': (el) => { rememberOpen(); ed().week = Number(el.dataset.w); C.render(); },
+    'ed-swap-all': (el) => {
+      const ex = getAt(ed().data, el.dataset.path);
+      const name = prompt(`Replace "${ex.name}" everywhere in this plan with:`, ex.name); if (!name || !name.trim() || name.trim() === ex.name) return;
+      const newId = slug(name), oldId = ex.id; let n = 0;
+      eachDay(null, (d) => d.blocks.forEach((b) => b.exercises.forEach((x) => { if (x.id === oldId) { x.name = name.trim(); x.id = newId; n++; } })));
+      ed().dirty = true; C.toast(`Swapped in ${n} workouts`); rerender();
+    },
+    'ed-del-all': (el) => {
+      const ex = getAt(ed().data, el.dataset.path), oldId = ex.id;
+      if (!confirm(`Remove "${ex.name}" everywhere in this plan?`)) return;
+      let n = 0;
+      eachDay(null, (d) => { d.blocks.forEach((b) => { const k = b.exercises.length; b.exercises = b.exercises.filter((x) => x.id !== oldId); n += k - b.exercises.length; }); d.blocks = d.blocks.filter((b) => b.exercises.length); });
+      ed().dirty = true; C.toast(`Removed from ${n} workouts`); rerender();
+    },
+    'ed-copy-all': (el) => {
+      const ex = getAt(ed().data, el.dataset.path); const src = dayOf(el.dataset.path);
+      if (!ex.name || !ex.name.trim()) { C.toast('Name the exercise first'); return; }
+      if (!ex.id || ex.id.startsWith('new-')) ex.id = slug(ex.name);
+      const bi = Number(el.dataset.path.split('.blocks.')[1].split('.')[0]);
+      let n = 0;
+      eachDay((d) => (d.name && d.name === src.name) || (!src.name && d.id === src.id), (d) => {
+        if (d.blocks.some((b) => b.exercises.some((x) => x.id === ex.id))) return;
+        d.blocks.splice(Math.min(bi, d.blocks.length), 0, { type: 'single', exercises: [clone(ex)] }); n++;
+      });
+      ed().dirty = true; C.toast(n ? `Added to ${n} more workouts` : 'Already in every week'); rerender();
     },
     'ed-name-block': (el) => { setAt(ed().data, el.dataset.path + '.name', 'Block'); ed().dirty = true; rerender(); },
     'ed-cardio-on': () => { ed().data.cardio = { perWeek: [3, 4], minutes: [20, 40], options: ['StairMaster', 'Incline Walking'], note: '' }; ed().dirty = true; rerender(); },
@@ -278,8 +334,16 @@
     },
   };
 
+  // the day id an editor path points into, and a walker over that day in every week
+  // the day an editor path points into, and a walker over matching days in every week (null = every day)
+  function dayOf(path) { const m = path.match(/^(.*?\.days\.\d+)/) || path.match(/^(days\.\d+)/); return m ? getAt(ed().data, m[1]) : {}; }
+  function eachDay(match, fn) {
+    const d = ed().data;
+    const all = d.schedule ? d.schedule.flatMap((e) => e.days || []) : (d.days || []);
+    all.forEach((day) => { if (!match || match(day)) fn(day); });
+  }
   function open({ data, row, isNew, forClientName, grantTo }) {
-    C.ui.ed = { data: clone(data), row: row || { visibility: 'all', published: true }, isNew: !!isNew, forClientName, grantTo, open: new Set(isNew ? ['info'] : []), dirty: !!isNew };
+    C.ui.ed = { week: 1, data: clone(data), row: row || { visibility: 'all', published: true }, isNew: !!isNew, forClientName, grantTo, open: new Set(isNew ? ['info'] : []), dirty: !!isNew };
     C.setTab('editor');
   }
   function blankPlan() {

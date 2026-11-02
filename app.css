@@ -389,3 +389,11 @@ a.btn { text-decoration: none; }
 
 .coach-tools { margin-top: 14px; padding-top: 4px; border-top: 1px dashed var(--line); }
 .coach-tools .row .btn { flex: none; }
+/* week-by-week plans */
+.week-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+.week-picker .chip { margin: 0; border: 0; min-width: 36px; padding: 6px 10px; font-size: 14px; cursor: pointer; color: var(--text); }
+.week-picker .chip.strong { color: var(--bg); }
+.day-instr { margin: 8px 0 0; font-size: 14px; }
+.day-instr p { margin: 0 0 4px; }
+.ex-guide-note { margin-top: 2px; white-space: normal; }
+.ed-allweeks { gap: 10px; margin: -4px 0 8px; font-size: 13px; align-items: center; }

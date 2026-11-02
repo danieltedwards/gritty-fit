@@ -20,6 +20,8 @@ written in the app and stored online; this file format stays the same.)
 | `blocks[]` | `{type: "single" \| "superset", name?, note?, rest?, exercises[]}`; superset `rest` starts after the last exercise of a round |
 | `exercises[]` | `{id, name, sets, reps, role, tempo?, rest?, each?, effort?, notes?, bodyweight?}` |
 | `role` | `main`, `accessory`, `isolation` or `core`; drives progression hints (double progression from the rep range) |
+| `schedule[]` | Optional, for plans that change week to week: `[{weeks:[1,2], days:[...]}]`. The client sees the days for their current week; `days` should still hold week 1 (the template older app versions use). Keep day `id`s (d1, d2…) and exercise `id`s the same across weeks so "last time" numbers carry over |
+| `days[].instructions` | Optional free text shown on the day (conditioning options, intervals, recovery work), one paragraph per line |
 | `sections[]` | Coaching text shown in the plan guide: `{title, body: [{p}, {ul:[...]}, {table:{head, rows}}]}` |
 
 Exercise `id`s must be unique within a plan and should stay stable: a client's "last time" numbers

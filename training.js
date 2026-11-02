@@ -74,6 +74,16 @@
     const block = Math.floor((Math.max(week, 1) - 1) / cycle) + 1;
     return { week, cycleWeek: cw, block, blocks: Math.ceil((plan.weeks || cycle) / cycle), guide, weekStart, weekEnd: C.addDays(weekStart, 6), before: days < 0, done: week > (plan.weeks || 999) };
   }
+  // Plans with a week-by-week schedule carry their own days for each week; others use plan.days every week.
+  function daysAt(plan, week) {
+    if (!plan || !plan.schedule || !plan.schedule.length) return plan ? plan.days : [];
+    const w = Math.min(Math.max(week || 1, 1), plan.weeks || 999);
+    const e = plan.schedule.find((x) => (x.weeks || []).includes(w))
+      || [...plan.schedule].reverse().find((x) => Math.min(...(x.weeks || [1])) <= w) || plan.schedule[0];
+    return e.days;
+  }
+  const atWeek = (plan, week) => (plan && plan.schedule ? Object.assign({}, plan, { days: daysAt(plan, week) }) : plan);
+  const instructionsHTML = (t) => (t ? `<div class="day-instr">${String(t).split(/\n+/).map((l) => `<p>${esc(l)}</p>`).join('')}</div>` : '');
   const repRange = (reps) => { const m = String(reps).match(/\d+/g); return m ? { min: +m[0], max: +(m[1] || m[0]) } : null; };
   const restSeconds = (rest) => {
     if (!rest) return 0;
@@ -117,6 +127,10 @@
     const rr = repRange(ex.reps);
     const weights = last.sets.map((s) => s.weight || 0);
     const top = Math.max(...weights);
+    // the rep target moved (week-by-week plans): steer the load the right way instead of a small bump
+    const avgReps = last.sets.reduce((a, s) => a + (s.reps || 0), 0) / last.sets.length;
+    if (rr && top && avgReps >= rr.max + 3) return `Fewer reps today (${ex.reps} vs ${Math.round(avgReps)} last time): go heavier than ${top} ${u}.`;
+    if (rr && top && avgReps > 0 && avgReps <= rr.min - 3) return `More reps today (${ex.reps} vs ${Math.round(avgReps)} last time): go lighter than ${top} ${u}.`;
     const sameWeight = weights.every((x) => x === top);
     if (rr && sameWeight && last.sets.length >= ex.sets && last.sets.every((s) => (s.reps || 0) >= rr.max)) {
       const bump = bumpFor(ex);
@@ -159,15 +173,16 @@
     if (plan === undefined) return h + '<div class="card"><div class="empty">Loading your plan…</div></div>';
     if (!plan) return h;
     const wk = programWeek(prog, plan);
+    const pw = atWeek(plan, wk.week);
     const doneIds = new Set(sessionsThisProgramWeek(prog, wk).map((w) => w.dayId));
-    const nd = nextDay(plan, prog, wk);
+    const nd = nextDay(pw, prog, wk);
     const cardioDone = st.workouts.filter((w) => isCardio(w) && w.date >= wk.weekStart && w.date <= wk.weekEnd).length;
-    h += `<div class="card"><div class="card-head"><h2>Your program</h2><button class="btn small" data-action="plan-guide" data-id="${esc(plan.id)}">Guide</button></div>
+    h += `<div class="card"><div class="card-head"><h2>Your program</h2><span class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn small" data-action="plans-open">Plans</button><button class="btn small" data-action="plan-guide" data-id="${esc(plan.id)}">Guide</button></span></div>
       <div style="font-weight:800;font-size:18px;line-height:1.2">${esc(plan.name)}</div><div class="sub">${esc(plan.phase || '')}</div>
       ${wk.before ? `<p class="sub">Starts ${C.prettyDate(prog.startDate)}.</p>` : wk.done ? `<p><strong>Program complete 🎉</strong> <span class="sub">Talk to your coach about the next phase.</span></p>` : `
       <div class="week-pill">Week ${wk.week} of ${plan.weeks}${wk.blocks > 1 ? ` · Block ${wk.block}` : ''}${wk.guide ? ` · ${esc(wk.guide.label)}` : ''}</div>
       ${wk.guide ? `<p class="sub" style="margin:6px 0 0"><strong>${esc(wk.guide.effort)}</strong>. ${esc(wk.guide.note || '')}</p>` : ''}`}
-      <div class="days">${plan.days.map((d) => `<button class="day ${doneIds.has(d.id) ? 'done' : ''} ${nd && nd.id === d.id ? 'next' : ''}" data-action="session-start" data-day="${d.id}">
+      <div class="days">${pw.days.map((d) => `<button class="day ${doneIds.has(d.id) ? 'done' : ''} ${nd && nd.id === d.id ? 'next' : ''}" data-action="session-start" data-day="${d.id}">
         <span class="day-label">${esc(d.label)}${d.optional ? ' · optional' : ''}</span><span class="day-name">${esc(d.name)}</span><span class="day-state">${doneIds.has(d.id) ? '✓ Done' : nd && nd.id === d.id ? 'Up next' : ''}</span></button>`).join('')}</div>
       ${!as && nd && !wk.done ? `<button class="btn primary block" data-action="session-start" data-day="${nd.id}" style="margin-top:10px">Start ${esc(nd.label)}: ${esc(nd.name)}</button>` : ''}
       ${!nd && !wk.done && !wk.before ? '<p class="sub">All sessions done this week. Recover well 💪</p>' : ''}
@@ -194,7 +209,7 @@
     if (!plan) return '';
     const wk = programWeek(prog, plan);
     if (wk.before || wk.done) return '';
-    const nd = nextDay(plan, prog, wk);
+    const nd = nextDay(atWeek(plan, wk.week), prog, wk);
     const doneToday = st.workouts.some((w) => w.planId === prog.planId && w.date === C.todayISO() && w.sets);
     return `<div class="card"><div class="card-head"><h2>Training · Week ${wk.week}</h2><span class="sub">${wk.guide ? esc(wk.guide.effort) : ''}</span></div>
       ${doneToday ? '<p style="margin:0 0 8px">✓ Trained today. Nice work.</p>' : ''}
@@ -243,11 +258,20 @@
         ${plan.cardio ? `<li><div class="grow"><div class="title">Cardio</div><div class="meta">${esc((plan.cardio.options || []).join(', '))}</div></div><span class="num">${plan.cardio.perWeek.join('–')}× · ${plan.cardio.minutes.join('–')} min</span></li>` : ''}
         ${(plan.extras || []).map((x) => `<li><div class="grow"><div class="title">${esc(x.name)}</div>${x.notes ? `<div class="meta">${esc(x.notes)}</div>` : ''}</div><span class="num">${x.perWeek || 1}×${x.minutes ? ' · ' + x.minutes + ' min' : ''}</span></li>`).join('')}</ul></div>`;
     }
-    h += plan.days.map((d) => `<div class="card"><div class="card-head"><h2>${esc(d.label)}${d.optional ? ' · optional' : ''}</h2></div><div style="font-weight:800;font-size:18px">${esc(d.name)}</div>
-      ${d.focus ? `<p class="sub"><em>${esc(d.focus)}</em></p>` : ''}
+    let gDays = plan.days;
+    if (plan.schedule && plan.schedule.length) {
+      const nW = plan.weeks || Math.max(...plan.schedule.flatMap((x) => x.weeks || [1]));
+      const curW = cur && cur.planId === plan.id ? programWeek(cur, plan).week : 1;
+      const gw = Math.min(Math.max(C.ui.guideWeek || curW, 1), nW);
+      gDays = daysAt(plan, gw);
+      h += `<div class="card"><div class="card-head"><h2>Week ${gw}</h2><span class="sub">changes week to week</span></div>
+        <div class="week-picker">${Array.from({ length: nW }, (_, i) => i + 1).map((w) => `<button class="chip ${w === gw ? 'strong' : ''}" data-action="guide-week" data-w="${w}">${w}</button>`).join('')}</div></div>`;
+    }
+    h += gDays.map((d) => `<div class="card"><div class="card-head"><h2>${esc(d.label)}${d.optional ? ' · optional' : ''}</h2></div><div style="font-weight:800;font-size:18px">${esc(d.name)}</div>
+      ${d.focus ? `<p class="sub"><em>${esc(d.focus)}</em></p>` : ''}${instructionsHTML(d.instructions)}
       ${d.warmup && plan.warmups && plan.warmups[d.warmup] ? `<p class="sub">Starts with the ${esc(plan.warmups[d.warmup].name)}.</p>` : ''}
       ${d.blocks.map((b) => `${b.type === 'superset' || b.name ? `<div class="res-head">${esc(b.name || 'Superset')}</div>` : ''}<ul class="list">${b.exercises.map((ex, i) => `<li><div class="grow"><div class="title">${b.type === 'superset' ? String.fromCharCode(65 + i) + '. ' : ''}${esc(ex.name)}</div>
-        <div class="meta">${[ex.tempo ? 'Tempo ' + ex.tempo : '', ex.rest ? 'Rest ' + ex.rest : '', ex.effort || ''].filter(Boolean).join(' · ')}</div></div><span class="num">${prescription(ex)}</span></li>`).join('')}</ul>`).join('')}
+        <div class="meta">${[ex.tempo ? 'Tempo ' + ex.tempo : '', ex.rest ? 'Rest ' + ex.rest : '', ex.effort || ''].filter(Boolean).join(' · ')}</div>${ex.notes ? `<div class="meta ex-guide-note">${esc(ex.notes)}</div>` : ''}</div><span class="num">${prescription(ex)}</span></li>`).join('')}</ul>`).join('')}
       ${d.suggestions ? `<div>${d.suggestions.map((s) => `<span class="chip">${esc(s)}</span>`).join('')}</div>` : ''}</div>`).join('');
     h += (plan.sections || []).map((s) => `<details class="card guide-sec"><summary><strong>${esc(s.title)}</strong></summary><div class="guide-body">${renderBody(s.body)}</div></details>`).join('');
     return h;
@@ -262,8 +286,9 @@
       if (st.activeSession.dayId === dayId) { openSession(); return; }
       if (!confirm('You have a workout in progress. Discard it and start this one?')) return;
     }
-    const day = plan.days.find((d) => d.id === dayId);
     const wk = programWeek(prog, plan);
+    const day = daysAt(plan, wk.week).find((d) => d.id === dayId) || plan.days.find((d) => d.id === dayId);
+    if (!day) { C.toast('That day isn\'t in this week\'s plan'); return; }
     st.activeSession = { id: C.uid(), planId: plan.id, dayId, dayLabel: day.label, dayName: day.name, week: wk.week, date: C.todayISO(),
       startedAt: Date.now(), sets: {}, extraSets: {}, primer: {}, extra: [], notes: '', deload: !!(wk.guide && wk.guide.deload) };
     C.save();
@@ -299,7 +324,7 @@
     const lastTxt = last ? last.sets.map((s) => (s.weight ? `${s.weight}×${s.reps ?? '–'}` : `${s.reps ?? '–'}`)).join(', ') : '';
     return `<div class="ex-card" id="ex-${ex.id}"><div class="ex-title">${letter ? `<span class="ex-letter">${letter}</span>` : ''}${esc(ex.name)}</div>
       <div class="ex-chips"><span class="chip strong">${prescription(ex)}</span>${ex.tempo ? `<span class="chip">Tempo ${esc(ex.tempo)}</span>` : ''}${ex.rest ? `<span class="chip">Rest ${esc(ex.rest)}</span>` : ''}${ex.effort ? `<span class="chip">${esc(ex.effort)}</span>` : ''}
-        ${ex.role === 'main' && wk.guide ? `<span class="chip">${esc(wk.guide.effort.replace('Main lifts ', ''))}</span>` : ''}</div>
+        ${ex.role === 'main' && wk.guide && !ex.effort ? `<span class="chip">${esc(wk.guide.effort.replace('Main lifts ', ''))}</span>` : ''}</div>
       ${ex.notes ? `<p class="sub ex-note">${esc(ex.notes)}</p>` : ''}
       ${lastTxt ? `<p class="sub ex-note">Last (${C.relDay(last.date)}): ${esc(lastTxt)}</p>` : ''}
       ${hn ? `<p class="ex-hint">${esc(hn)}</p>` : ''}
@@ -312,11 +337,12 @@
     if (!as) return '<div class="card"><div class="empty">No workout in progress.</div><button class="btn block" data-action="goto" data-tab="train">Back to Training</button></div>';
     const plan = planNow(as.planId);
     if (!plan) return '<div class="empty">Loading plan…</div>';
-    const day = plan.days.find((d) => d.id === as.dayId);
     const wk = programWeek(st.program && st.program.planId === plan.id ? st.program : { startDate: as.date }, plan, as.date);
+    const day = daysAt(plan, as.week || wk.week).find((d) => d.id === as.dayId) || plan.days.find((d) => d.id === as.dayId);
+    if (!day) return '<div class="card"><div class="empty">This workout\'s day was removed from the plan.</div><button class="btn danger block" data-action="session-discard">Discard</button></div>';
     let h = `<div class="card session-head"><div class="sub">${esc(day.label)} · Week ${wk.week}${wk.guide ? ' · ' + esc(wk.guide.label) : ''}</div>
       <div style="font-weight:800;font-size:22px;line-height:1.15">${esc(day.name)}</div>
-      ${day.focus ? `<p class="focus">“${esc(day.focus)}”</p>` : ''}
+      ${day.focus ? `<p class="focus">“${esc(day.focus)}”</p>` : ''}${instructionsHTML(day.instructions)}
       ${wk.guide ? `<p class="sub" style="margin:4px 0 0"><strong>${esc(wk.guide.effort)}</strong>${wk.guide.deload ? ' — deload week' : ''}</p>` : ''}
       <div class="sub" id="session-clock" style="margin-top:6px"></div></div>`;
     const wu = day.warmup && plan.warmups && plan.warmups[day.warmup];
@@ -347,7 +373,7 @@
 
   function findEx(as, exId) {
     const plan = planCache.get(as.planId);
-    const day = plan && plan.days.find((d) => d.id === as.dayId);
+    const day = plan && (daysAt(plan, as.week).find((d) => d.id === as.dayId) || plan.days.find((d) => d.id === as.dayId));
     const blocks = day ? day.blocks : [];
     for (const b of blocks) {
       const i = b.exercises.findIndex((e) => e.id === exId);
@@ -444,7 +470,8 @@
   }
   const actions = {
     'plans-open': () => C.setTab('plans'),
-    'plan-guide': (el) => { C.ui.guidePlan = el.dataset.id; C.setTab('guide'); },
+    'plan-guide': (el) => { C.ui.guidePlan = el.dataset.id; C.ui.guideWeek = null; C.setTab('guide'); },
+    'guide-week': (el) => { C.ui.guideWeek = Number(el.dataset.w); C.render(); },
     'plan-choose': async (el) => {
       const plan = await loadPlan(el.dataset.id).catch(() => null);
       if (!plan) { C.toast('Couldn\'t load that plan'); return; }
@@ -579,5 +606,6 @@
     resetPlans() { planIndex = null; indexPromise = null; planCache.clear(); const p = S().program; if (p) loadPlan(p.planId).then(() => C.softRender ? C.softRender() : C.render()).catch(() => {}); },
     trainCard, todayCard, summary, isCardio, renderBody,
     cachePlan(id, data) { planCache.set(id, data); },
+    daysAt,
   };
 })();
