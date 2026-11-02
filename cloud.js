@@ -385,11 +385,12 @@
     'coach-refresh': () => refreshCoach(),
     'coach-invite': () => {
       C.openModal(`<h2>Invite a client</h2>${field('Client name (for your list)', '<input type="text" name="label" placeholder="e.g. Denise" autofocus>')}
-        <p class="hint">Creates a one-time code. Send the link; they install GRIT, sign in, and land in your client list.</p>`, async (fd) => {
+        ${field('Their email or phone (optional)', '<input type="text" name="to" placeholder="denise@email.com or 555-123-4567" autocomplete="off">')}
+        <p class="hint">Creates a one-time invite code. <strong>GRIT doesn't send it for you</strong>: on the next screen, tap Email or Text and your phone opens a ready-to-send message.</p>`, async (fd) => {
         const code = Array.from(crypto.getRandomValues(new Uint8Array(6)), (x) => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[x % 32]).join('');
         const { error } = await sb.from('invites').insert({ code, label: (fd.get('label') || '').trim() || null });
         if (error) { C.toast(error.message); return false; }
-        setTimeout(() => showInvite(code, (fd.get('label') || '').trim()), 0);
+        setTimeout(() => showInvite(code, (fd.get('label') || '').trim(), (fd.get('to') || '').trim()), 0);
         refreshCoach();
       }, { saveLabel: 'Create invite' });
     },
@@ -504,13 +505,18 @@
       refreshCoach(); if (window.Training) Training.resetPlans();
     },
   };
-  function showInvite(code, label) {
+  function showInvite(code, label, to = '') {
     const link = `${location.origin}${location.pathname}#invite=${code}`;
-    const msg = `${label ? label + ', h' : 'H'}ere's your invite to GRIT, my coaching app. Open this link on your phone, add it to your home screen, then sign in with your email: ${link}  (invite code: ${code})`;
-    C.openModal(`<h2>Invite ready</h2>
+    const msg = `${label ? label + ', h' : 'H'}ere's your invite to GRIT, my coaching app.\n\n1. Open this link on your phone: ${link}\n2. Add it to your home screen (iPhone: Safari → Share → Add to Home Screen; Android: Chrome → ⋮ → Install app).\n3. Open GRIT and sign in with your email. You'll get a code by email to type in.\n\nYour invite code: ${code}`;
+    const isEmail = /@/.test(to), phone = !isEmail ? to.replace(/[^\d+]/g, '') : '';
+    const mailto = `mailto:${isEmail ? encodeURIComponent(to) : ''}?subject=${encodeURIComponent('Your GRIT coaching app invite')}&body=${encodeURIComponent(msg)}`;
+    const sms = `sms:${phone}${/iPhone|iPad/.test(navigator.userAgent) ? '&' : '?'}body=${encodeURIComponent(msg)}`;
+    C.openModal(`<h2>Invite ready${label ? ' for ' + esc(label) : ''}</h2>
       <div class="invite-code">${esc(code)}</div>
-      <p class="sub" style="text-align:center;margin-top:0">${esc(link)}</p>
-      <div class="row"><button class="btn primary" data-modal-action="coach-share">Share invite</button><button class="btn" data-modal-action="coach-copy">Copy message</button></div>
+      <p class="sub" style="text-align:center;margin-top:0;word-break:break-all">${esc(link)}</p>
+      <p class="hint" style="margin-top:0"><strong>Now send it.</strong> GRIT doesn't email invites itself, so pick how to send it:</p>
+      <div class="row" style="margin-bottom:8px"><a class="btn primary" href="${esc(mailto)}">✉️ Email</a><a class="btn primary" href="${esc(sms)}">💬 Text</a></div>
+      <div class="row"><button class="btn" data-modal-action="coach-share">Share…</button><button class="btn" data-modal-action="coach-copy">Copy message</button></div>
       <p class="hint" style="margin-top:10px">Single use. They can also type the code in Settings → Account → Enter invite code.</p>`, null, { hideSave: true });
     modalActions['coach-share'] = async () => { try { if (navigator.share) await navigator.share({ title: 'GRIT invite', text: msg }); else throw new Error('no share'); } catch (_) { modalActions['coach-copy'](); } };
     modalActions['coach-copy'] = async () => { try { await navigator.clipboard.writeText(msg); C.toast('Copied. Paste it into a text or email'); } catch (_) { prompt('Copy this message:', msg); } };

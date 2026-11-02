@@ -356,3 +356,4 @@ body.timing #toast { bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) + 8
 .ed-row .row { margin-bottom: 8px; }
 .ed-wu { margin-bottom: 6px; }
 .ed-wu .row input { flex: 1; min-width: 0; }
+a.btn { text-decoration: none; }
