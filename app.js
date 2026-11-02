@@ -21,7 +21,7 @@
   const relDay = (iso) => { const diff = daysBetween(iso, todayISO()); return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : prettyDate(iso); };
   const byDateDesc = (a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || ''));
 
-  const APP_VERSION = '2026.11.03-e';
+  const APP_VERSION = '2026.11.03-f';
   // ---------- state ----------
   const DEFAULT_STATE = () => ({
     version: 1,
@@ -613,7 +613,7 @@
     const defMeal = hr < 11 ? 'Breakfast' : hr < 15 ? 'Lunch' : hr < 21 ? 'Dinner' : 'Snack';
     openModal(`<h2>${isEdit ? 'Edit food' : 'Log food'}</h2>
       ${isEdit ? '' : `<div class="lookup">
-        <div class="search-row"><input type="search" id="fsearch" placeholder="Search: eggs, rice, Chobani…" autocomplete="off" enterkeyhint="search" autofocus>
+        <div class="search-row"><input type="search" id="fsearch" placeholder="Search foods & recipes: eggs, salmon, oats…" autocomplete="off" enterkeyhint="search" autofocus>
         <button class="btn" data-modal-action="scan" aria-label="Scan barcode">${ICON_SCAN}<span>Scan</span></button></div>
         <div id="fresults"></div></div>`}
       <div id="fpick"></div>
@@ -637,6 +637,7 @@
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(debounce); runSearch(true); } });
     input.addEventListener('input', () => { clearTimeout(debounce); debounce = setTimeout(() => runSearch(false), 160); });
     showRecent();
+    if (window.Cloud && Cloud.loadRecipes) Cloud.loadRecipes().catch(() => {});
 
     function showRecent() {
       const mine = FoodLookup.searchHistory('', S.food, 6);
@@ -647,17 +648,19 @@
       const q = input.value.trim();
       const my = ++seq;
       if (q.length < 2) { showRecent(); return; }
+      const lib = searchLibrary(q, 6);
       const mine = FoodLookup.searchHistory(q, S.food, 4);
       let common = [];
       const box = $('#fresults');
       if (!box) return;
       try { common = await FoodLookup.searchCommon(q, 10); } catch (e) { box.innerHTML = `<p class="hint">Food database didn't load (${esc(e.message)}). Packaged search may still work.</p>`; }
       if (my !== seq) return;
-      foodCache.list = [...mine, ...common];
+      foodCache.list = [...lib, ...mine, ...common];
       let h = '';
-      if (mine.length) h += `<div class="res-head">Your foods</div>${resultList(mine, 0)}`;
-      if (common.length) h += `<div class="res-head">Common foods · USDA</div>${resultList(common, mine.length)}`;
-      if (!mine.length && !common.length) h += `<p class="hint" style="margin:6px 0">No matches in common foods.</p>`;
+      if (lib.length) h += `<div class="res-head">Recipes & my meals</div>${resultList(lib, 0)}`;
+      if (mine.length) h += `<div class="res-head">Your foods</div>${resultList(mine, lib.length)}`;
+      if (common.length) h += `<div class="res-head">Common foods · USDA</div>${resultList(common, lib.length + mine.length)}`;
+      if (!lib.length && !mine.length && !common.length) h += `<p class="hint" style="margin:6px 0">No matches in recipes or common foods.</p>`;
       h += `<div id="fonline">${online ? '' : `<button class="btn small block" data-modal-action="search-online">Search packaged & brand foods for “${esc(q)}”</button>`}</div>`;
       box.innerHTML = h;
       if (online) searchOnline(q, my);
@@ -679,6 +682,26 @@
     }
     modalActions['search-online'] = () => { clearTimeout(debounce); seq++; searchOnline(input.value.trim(), seq); };
   }
+  // Recipes (coach library) and saved meals, searched alongside foods in the log form
+  function searchLibrary(q, limit) {
+    const toks = q.toLowerCase().split(/\s+/).filter(Boolean);
+    if (!toks.length) return [];
+    const hit = (txt) => toks.every((t) => txt.includes(t));
+    const out = [];
+    const recipes = (window.Cloud && Cloud.recipes && Cloud.recipes()) || [];
+    recipes.forEach((r) => {
+      const d = r.data || {}; const per = d.per;
+      if (!per || !hit(((d.name || '') + ' ' + (d.tags || []).join(' ')).toLowerCase())) return;
+      out.push({ name: d.name, brand: '', source: 'Recipe', recipeId: r.id, per100: null, perServing: { k: per.kcal, p: per.p, c: per.c, f: per.f }, portions: [['serving', null]] });
+    });
+    (S.savedMeals || []).forEach((m) => {
+      if (!m.per || !hit(((m.name || '') + ' ' + (m.tags || []).join(' ')).toLowerCase())) return;
+      out.push({ name: m.name, brand: '', source: 'My meal', per100: null, perServing: { k: m.per.kcal, p: m.per.p, c: m.per.c, f: m.per.f }, portions: [['serving', null]] });
+    });
+    const first = toks[0];
+    out.sort((a, b) => (b.name.toLowerCase().startsWith(first) ? 1 : 0) - (a.name.toLowerCase().startsWith(first) ? 1 : 0) || a.name.localeCompare(b.name));
+    return out.slice(0, limit);
+  }
   const ICON_SCAN = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M10 8v8M13 8v8M17 8v8"/></svg>';
   const foodCache = { list: [] };
 
@@ -687,7 +710,7 @@
       const per = it.perServing && !it.per100 ? it.perServing : null;
       const meta = it.source === 'Mine' ? `${fmt(it.perServing.k, 0)} kcal${it.entry.serving ? ' · ' + esc(it.entry.serving) : ''}`
         : per ? `${fmt(per.k, 0)} kcal / serving` : `${fmt(it.per100.k, 0)} kcal / 100 g · P ${fmt(it.per100.p, 0)} C ${fmt(it.per100.c, 0)} F ${fmt(it.per100.f, 0)}`;
-      return `<li><button data-modal-action="pick-food" data-i="${offset + i}"><div class="title">${esc(FoodLookup.displayName(it))}</div><div class="meta">${it.brand && it.source !== 'USDA' ? esc(it.brand) + ' · ' : ''}${meta}</div></button></li>`;
+      return `<li><button data-modal-action="pick-food" data-i="${offset + i}"><div class="title">${esc(FoodLookup.displayName(it))}${it.source === 'Recipe' ? ' <span class="chip">Recipe</span>' : it.source === 'My meal' ? ' <span class="chip">My meal</span>' : ''}</div><div class="meta">${it.brand && it.source !== 'USDA' ? esc(it.brand) + ' · ' : ''}${meta}</div></button></li>`;
     }).join('')}</ul>`;
   }
 
@@ -711,7 +734,8 @@
       if (!n) { $('#pout').textContent = 'No nutrition data for this portion. Enter it below.'; return; }
       els.name.value = FoodLookup.displayName(food);
       els.kcal.value = n.k; els.protein.value = n.p; els.carbs.value = n.c; els.fat.value = n.f;
-      const label = pi === -1 ? `${fmt(qty)} g` : `${fmt(qty)} × ${food.portions[pi][0]}`;
+      const frac = (n) => { const w = Math.floor(n), r = Math.round((n - w) * 4) / 4, f = { 0.25: '¼', 0.5: '½', 0.75: '¾' }[r]; return r === 1 ? String(w + 1) : f ? (w ? w : '') + f : fmt(n); };
+      const label = pi === -1 ? `${fmt(qty)} g` : food.portions[pi][0] === 'serving' ? `${frac(qty)} ${qty === 1 ? 'serving' : 'servings'}` : `${fmt(qty)} × ${food.portions[pi][0]}`;
       els.serving.value = food.source === 'Mine' && qty === 1 ? food.entry.serving || '' : food.source === 'Mine' ? `${fmt(qty)} × ${food.entry.serving || 'serving'}` : label;
       const grams = pi === -1 ? qty : food.portions[pi][1] ? food.portions[pi][1] * qty : null;
       $('#pout').innerHTML = `<strong>${n.k} kcal</strong> · P ${n.p} · C ${n.c} · F ${n.f}${grams ? ` <span style="opacity:.7">(${fmt(grams, 0)} g)</span>` : ''}`;
