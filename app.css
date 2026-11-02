@@ -357,3 +357,28 @@ body.timing #toast { bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) + 8
 .ed-wu { margin-bottom: 6px; }
 .ed-wu .row input { flex: 1; min-width: 0; }
 a.btn { text-decoration: none; }
+
+/* ---------- nutrition ---------- */
+.chips-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip-btn { flex: 1; min-width: 70px; padding: 8px 6px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); font-weight: 700; font-size: 14px; cursor: pointer; color: var(--muted); }
+.chip-btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.small-select { min-height: 34px !important; padding: 4px 8px !important; font-size: 14px !important; width: auto !important; margin-left: 8px; }
+.mbar { margin-bottom: 8px; }
+.mbar .progress { margin: 4px 0 0; height: 8px; }
+.meal-card { padding: 14px; }
+.meal-card.met { border-color: color-mix(in srgb, var(--good) 50%, var(--line)); }
+.hands { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.hand { padding: 6px 10px; border-radius: 99px; background: var(--surface-2); font-weight: 650; font-size: 14px; }
+.ex-line { font-size: 13px; margin-top: 6px; }
+.amt-list li { padding: 7px 0; }
+.amt-list .grow { font-size: 14px; }
+.logged { margin-top: 8px; border-top: 1px dashed var(--line); }
+.meal-actions { margin-top: 10px; gap: 6px; }
+.meal-actions .btn { flex: none; }
+.week-sched { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+.week-sched label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.week-sched select { min-height: 38px; padding: 6px; font-size: 14px; }
+.pill-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.pill-check input { position: absolute; opacity: 0; pointer-events: none; }
+.pill-check span { display: inline-block; padding: 6px 10px; border-radius: 99px; border: 1px solid var(--line); background: var(--surface-2); font-size: 13px; font-weight: 600; cursor: pointer; }
+.pill-check input:checked + span { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }

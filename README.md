@@ -12,7 +12,7 @@ everyone from the **Coach dashboard**. It works offline; everything syncs when o
 | Tab | What you do there |
 | --- | --- |
 | **Today** | Dashboard: quick-add buttons, a backup reminder when one is due, your week-so-far score, daily accountability checklist (with streaks), calories vs. target, workouts this week, weight trend and distance to goal, active goals with countdowns, and a journal prompt. |
-| **Food** | **Search & auto-fill**: type a food and pick it; calories, protein, carbs and fat fill in for the amount you choose (grams, "1 large", "1 cup", "1 serving"…). **Scan a barcode** with the camera, or type the number, for packaged foods. Foods you've logged before come up first. Then: log by meal, step back through previous days, one-tap re-add, 14-day calorie chart. |
+| **Food** | **GRIT Nutrition plan**: enter your stats once (Food → Start) and pick **Cut / Maintain / Build**. Every day you get calories, protein, carbs and fat for that day's training (**Rest / Light / Moderate / Heavy**, from your weekly schedule; change any day with one tap) and a meal-by-meal plan built around **when you train** (pre-workout, workout shake, post-workout). Each meal shows **Simple** (hand portions: palms, fists, thumbs, plus Zone blocks) or **Precise** (grams and exact amounts of the foods you like). **Log this meal** in one tap, or log anything else into a meal. Plus food search, barcode scanning, one-tap re-add, 14-day chart. |
 | **Train** | **Coach programs**: choose a plan (Training → Choose a plan), see where you are (week, effort target, deload), and run each day set by set: prescribed sets × reps, tempo, rest and cues, last session's numbers pre-filled, double-progression hints ("all sets hit 8 → add weight"), lower-body primer checklist, supersets, automatic rest timer, resume after closing the app. Weekly cardio target. Plus free-form workouts, one-tap **Repeat**, and **Lifts & PRs** with estimated 1-rep max charts. |
 | **Body** | Weigh-ins plus body fat %, muscle mass, and tape measurements (waist, chest, hips, arm, thigh, neck), all with trend charts. **Progress photos**: take or upload, then tap any two to compare side by side with the weight on each date. |
 | **Goals → Week** | Weekly accountability review: a score for the week (calories on target, workouts vs. goal, habits, journal), weight change, PRs, your wins, and the "tomorrow I will…" commitments you made, so you can check yourself. Step back through past weeks. |
@@ -27,6 +27,10 @@ in `config.js`. You do these steps once, in the Supabase dashboard (supabase.com
 **1. Create the database.** Left menu **SQL Editor** → **New query** → paste the whole of
 [`supabase/schema.sql`](supabase/schema.sql) → **Run**. You should see "Success. No rows returned".
 (Safe to run again later; it only adds what's missing.)
+
+> **Updating:** when a new GRIT version adds database features, paste `supabase/schema.sql` into the SQL
+> Editor and Run it again. It's safe to repeat. (Nutrition plans + photo sharing need the version from
+> Nov 3, 2026.)
 
 **2. Tell Supabase where the app lives.** **Authentication → URL Configuration**:
 - **Site URL**: `https://danieltedwards.github.io/gritty-fit/`
@@ -86,6 +90,24 @@ read (not edit) data of clients on their roster; nobody else can read anything. 
 in `config.js` is meant to be public. Never put the `service_role` key or database password in the
 app. Health information is sensitive: keep medical details to short notes, and check what rules
 apply to your coaching business.
+
+## GRIT Nutrition (how the numbers work)
+
+One method that combines **RP** (calories first, protein by bodyweight, carbs scaled to training,
+nutrients timed around training), the **Vertical Diet** (easy-to-digest, nutrient-dense staples;
+adjust carbs first) and the **Zone** (blocks / hand portions so you can eat without a scale).
+
+- **Maintenance**: Mifflin–St Jeor (or Katch–McArdle when body-fat % is known) × daily activity, plus
+  training: light +2, moderate +4, heavy +6.5 kcal per lb of bodyweight.
+- **Goal**: cut 0.4 / 0.6 / 0.9 % of bodyweight per week (gentle / standard / aggressive); build
+  0.2 / 0.35 / 0.5 %; never below a safe floor (1,200 F / 1,500 M, or 90% of BMR).
+- **Protein** 1.0 g/lb on a cut, 0.9 g/lb otherwise (×0.8 at higher body fat). **Fat** steady every day
+  (≥ 0.3 g/lb; 25–30% of rest-day calories). **Carbs** fill the rest, so they rise with training.
+- **Meals**: carbs and fat are weighted around training (pre 1.5×, shake 2×, post 2.5× carbs; little fat
+  near training). Hand portions: palm ≈ 24–30 g protein, fist ≈ 25–30 g carbs, thumb ≈ 7–10 g fat.
+- A health question flags pregnancy, medical conditions affecting diet, or eating-disorder history:
+  those clients start at maintenance and are marked for coach review.
+- Coach → client → **Targets**: calories ± per day and protein override, applied on their next sync.
 
 ## Where the food data comes from
 
@@ -191,7 +213,9 @@ pick **GRIT Health**. Each evening you'll get the notification; open GRIT and ta
 Everything is saved on the phone first (IndexedDB), so the app is fast and works offline.
 When signed in, every change syncs to the GRIT database (Supabase) and to your other devices; the
 coach can read it. Signed out, data stays only on that device (use **Settings → Export backup**).
-Progress photos currently stay on the device only.
+Progress photos stay on the phone unless the client opens a photo and turns on **Share with my
+coach** (or **Share all**). Shared photos go to a private storage bucket that only that client and their
+coach can open; unsharing deletes the coach's copy.
 
 ## Put it on your phone (free)
 
@@ -241,6 +265,7 @@ editor.js             plan editor (templates and client versions)
 config.js             Supabase URL + publishable key
 vendor/supabase.js    Supabase client library (v2.117.3), bundled for offline use
 supabase/schema.sql   database tables + row-level security (run once in Supabase)
+nutrition.js          GRIT Nutrition: targets by day type, meal plan (simple/precise), setup
 training.js           plans, program guide, workout logger, rest timer
 plans/                training plans (JSON) — see plans/README.md
 foods.json            built-in USDA food database (per 100 g + portions)

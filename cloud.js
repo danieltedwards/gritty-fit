@@ -22,6 +22,8 @@
     Object.entries(st.health || {}).forEach(([d, v]) => m.set('health/' + d, { kind: 'health', id: d, data: v }));
     m.set('settings/main', { kind: 'settings', id: 'main', data: st.settings });
     m.set('program/main', { kind: 'program', id: 'main', data: { program: st.program || null, programHistory: st.programHistory || [] } });
+    if (st.nutrition) m.set('nutrition/main', { kind: 'nutrition', id: 'main', data: st.nutrition });
+    Object.entries(st.sharedPhotos || {}).forEach(([id, v]) => m.set('photo/' + id, { kind: 'photo', id, data: v }));
     return m;
   }
   function applyRecord(st, kind, id, data, deleted) {
@@ -36,6 +38,11 @@
       if (deleted) delete st.health[id]; else st.health[id] = data;
     } else if (kind === 'settings' && !deleted && data) {
       st.settings = Object.assign({}, st.settings, data);
+    } else if (kind === 'nutrition') {
+      st.nutrition = deleted ? null : data;
+    } else if (kind === 'photo') {
+      st.sharedPhotos = st.sharedPhotos || {};
+      if (deleted) delete st.sharedPhotos[id]; else st.sharedPhotos[id] = data;
     } else if (kind === 'program' && !deleted && data) {
       st.program = data.program || null; st.programHistory = data.programHistory || [];
     }
@@ -177,6 +184,9 @@
     const st = S();
     if (!t || !t.v || st.settings.coachTargetsV === t.v) return;
     ['calorieTarget', 'proteinTarget', 'carbTarget', 'fatTarget', 'workoutsPerWeek'].forEach((k) => { if (t[k] != null && t[k] !== '') st.settings[k] = Number(t[k]); });
+    // GRIT Nutrition plan adjustments (calories ± and protein) live with the plan
+    st.nutrition = st.nutrition || { overrides: {} };
+    st.nutrition.coach = { kcalAdjust: Number(t.kcalAdjust) || 0, protein: t.nProtein ? Number(t.nProtein) : null };
     st.settings.coachTargetsV = t.v;
     C.save();
     C.toast('Your coach updated your targets');
@@ -219,6 +229,26 @@
     const { error } = await sb.from('plans').delete().eq('id', id);
     if (error) throw error;
     coachData = null;
+  }
+
+  // ---------- progress photos shared with the coach (private storage) ----------
+  const BUCKET = 'progress-photos';
+  const canSharePhotos = () => !!(user && profile && profile.coach_id);
+  async function sharePhoto(photo) {
+    if (!canSharePhotos()) throw new Error('Connect with your coach first');
+    const path = `${user.id}/${photo.id}.jpg`;
+    const { error } = await sb.storage.from(BUCKET).upload(path, photo.blob, { upsert: true, contentType: 'image/jpeg' });
+    if (error) throw error;
+    return { date: photo.date, pose: photo.pose || '', path, sharedAt: new Date().toISOString() };
+  }
+  async function unsharePhoto(id, meta) {
+    const path = (meta && meta.path) || `${user.id}/${id}.jpg`;
+    const { error } = await sb.storage.from(BUCKET).remove([path]);
+    if (error) throw error;
+  }
+  async function photoUrl(path) {
+    const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(path, 3600);
+    return error ? null : data.signedUrl;
   }
 
   // ---------- coach: view a client's app read-only ----------
@@ -413,13 +443,20 @@
     'coach-targets': async (el) => {
       const { data } = await sb.from('profiles').select('targets').eq('id', el.dataset.id).maybeSingle();
       const t = (data && data.targets) || {};
+      const cl = coachData && coachData.clients.find((c) => c.client_id === el.dataset.id);
+      const np = cl && cl.nutrition && cl.nutrition.profile;
       C.openModal(`<h2>Targets for ${esc(el.dataset.name)}</h2>
+        <div class="sub" style="font-weight:700;margin:4px 0 8px">GRIT Nutrition plan${np ? '' : ' <span class="chip">not set up yet</span>'}</div>
+        ${np ? `<p class="hint" style="margin-top:0">${esc(({ cut: 'Cut', maintain: 'Maintain', build: 'Build' })[np.goal] || '')}${np.goal !== 'maintain' ? ' · ' + esc(np.pace || '') : ''} · ${np.meals} meals · ${np.sex === 'm' ? 'M' : 'F'} ${np.age}${np.flagged ? ' · <strong class="bad">flagged health answer: review before cutting</strong>' : ''}</p>` : ''}
+        <div class="fields-2">${field('Calories ± per day', C.inNum('kcalAdjust', t.kcalAdjust, 'step="10" placeholder="e.g. -150"'))}${field('Protein (g/day)', C.inNum('nProtein', t.nProtein, 'min="0" placeholder="auto"'))}</div>
+        <p class="hint">Adjusts every day of their plan; carbs and fat follow. Leave empty for the automatic numbers.</p>
+        <div class="sub" style="font-weight:700;margin:12px 0 8px">Fixed targets (clients without a plan)</div>
         <div class="fields-2">${field('Daily calories', C.inNum('calorieTarget', t.calorieTarget, 'min="0"'))}${field('Protein (g)', C.inNum('proteinTarget', t.proteinTarget, 'min="0"'))}</div>
         <div class="fields-2">${field('Carbs (g)', C.inNum('carbTarget', t.carbTarget, 'min="0"'))}${field('Fat (g)', C.inNum('fatTarget', t.fatTarget, 'min="0"'))}</div>
         ${field('Workouts per week', C.inNum('workoutsPerWeek', t.workoutsPerWeek, 'min="0" max="14" step="1"'))}
         <p class="hint">These replace the client's own targets the next time their app syncs. Leave a box empty to keep theirs.</p>`, async (fd) => {
         const nt = { v: Date.now() };
-        ['calorieTarget', 'proteinTarget', 'carbTarget', 'fatTarget', 'workoutsPerWeek'].forEach((k) => { const v = fd.get(k); if (v !== '' && v != null) nt[k] = Number(v); });
+        ['calorieTarget', 'proteinTarget', 'carbTarget', 'fatTarget', 'workoutsPerWeek', 'kcalAdjust', 'nProtein'].forEach((k) => { const v = fd.get(k); if (v !== '' && v != null) nt[k] = Number(v); });
         const { error } = await sb.from('profiles').update({ targets: nt }).eq('id', el.dataset.id);
         if (error) { C.toast(error.message); return false; }
         C.toast('Targets saved');
@@ -560,7 +597,9 @@
       return `<div class="client"><div class="row" style="justify-content:space-between;flex-wrap:nowrap;align-items:flex-start">
           <div style="min-width:0"><div class="title" style="font-weight:800">${esc(name)}</div><div class="sub" style="font-size:13px">${c.full_name ? esc(c.email) + ' · ' : ''}active <span class="${quiet ? 'bad' : ''}">${esc(active)}</span></div></div>
           ${c.last_weight != null ? `<div style="text-align:right;flex:none"><strong>${Number(c.last_weight)}</strong>${wChange != null ? `<div class="sub" style="font-size:12px">${wChange > 0 ? '+' : ''}${wChange} / wk</div>` : ''}</div>` : ''}</div>
-        <div style="margin:6px 0">${[`🏋️ ${c.workouts_7d}/7d`, `🍽 ${c.food_days_7d}/7`, `📓 ${c.journal_days_7d}/7`, pname ? esc(pname) : 'No plan', c.unread_notes ? `💬 ${c.unread_notes} unread` : ''].filter(Boolean).map((t) => `<span class="chip">${t}</span>`).join('')}</div>
+        <div style="margin:6px 0">${[`🏋️ ${c.workouts_7d}/7d`, `🍽 ${c.food_days_7d}/7`, `📓 ${c.journal_days_7d}/7`, pname ? esc(pname) : 'No plan',
+          c.nutrition && c.nutrition.profile ? `🥗 ${esc(({ cut: 'Cut', maintain: 'Maintain', build: 'Build' })[c.nutrition.profile.goal] || '')}${c.nutrition.profile.flagged ? ' ⚠️' : ''}` : '',
+          c.shared_photos ? `📷 ${c.shared_photos}` : '', c.unread_notes ? `💬 ${c.unread_notes} unread` : ''].filter(Boolean).map((t) => `<span class="chip">${t}</span>`).join('')}</div>
         <div class="row client-actions"><button class="btn small primary" data-action="coach-view" data-id="${c.client_id}" data-name="${esc(name)}">Open</button>
           <button class="btn small" data-action="coach-note" data-id="${c.client_id}" data-name="${esc(name)}">Message</button>
           <button class="btn small" data-action="coach-targets" data-id="${c.client_id}" data-name="${esc(name)}">Targets</button>
@@ -629,6 +668,7 @@
       window.addEventListener('online', () => { if (user) syncNow(); });
     },
     changed, settingsSection, saveName, todayCards, usesCloudPlans, fetchPlans, savePlan, deletePlan,
+    canSharePhotos, sharePhoto, unsharePhoto, photoUrl,
     get user() { return user; }, get profile() { return profile; },
     get configured() { return !!sb; },
     // exposed for tests

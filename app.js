@@ -21,7 +21,7 @@
   const relDay = (iso) => { const diff = daysBetween(iso, todayISO()); return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : prettyDate(iso); };
   const byDateDesc = (a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || ''));
 
-  const APP_VERSION = '2026.11.02-d';
+  const APP_VERSION = '2026.11.03-a';
   // ---------- state ----------
   const DEFAULT_STATE = () => ({
     version: 1,
@@ -38,6 +38,7 @@
     health: {},
     program: null,
     activeSession: null,
+    nutrition: null,
   });
   let S = null;
   let saveTimer = null;
@@ -105,6 +106,8 @@
   const sumKcal = (list) => list.reduce((a, f) => a + (f.kcal || 0), 0);
   const sumProtein = (list) => list.reduce((a, f) => a + (f.protein || 0), 0);
   const sumMacro = (list, k) => list.reduce((a, f) => a + (f[k] || 0), 0);
+  // Day's calorie target: from the nutrition plan (varies with training) if there is one, else Settings
+  const kcalTarget = (iso) => { const t = window.Nutrition && Nutrition.targetsFor(iso); return t ? t.kcal : S.settings.calorieTarget; };
   const bodySorted = () => [...S.body].sort((a, b) => a.date.localeCompare(b.date));
   const latestWith = (key) => { const b = bodySorted().filter((x) => x[key] != null); return b[b.length - 1] || null; };
   const activeHabits = () => S.habits.filter((h) => h.active);
@@ -169,7 +172,7 @@
     const days = [...Array(elapsed)].map((_, i) => addDays(ws, i));
     const kcalDays = days.map((d) => sumKcal(foodOn(d))).filter((k) => k > 0);
     const avgKcal = kcalDays.length ? Math.round(kcalDays.reduce((a, b) => a + b, 0) / kcalDays.length) : null;
-    const onTarget = kcalDays.filter((k) => st.calorieTarget && k >= st.calorieTarget * 0.85 && k <= st.calorieTarget * 1.05).length;
+    const onTarget = days.filter((d) => { const k = sumKcal(foodOn(d)), tg = kcalTarget(d); return k > 0 && tg && k >= tg * 0.85 && k <= tg * 1.05; }).length;
     const protDays = days.map((d) => sumProtein(foodOn(d))).filter((_, i) => sumKcal(foodOn(days[i])) > 0);
     const avgProtein = protDays.length ? Math.round(protDays.reduce((a, b) => a + b, 0) / protDays.length) : null;
     const ws_ = workoutsInWeek(ws);
@@ -209,6 +212,7 @@
     const t = todayISO();
     const st = S.settings;
     const eaten = sumKcal(foodOn(t)), protein = sumProtein(foodOn(t));
+    const calT = kcalTarget(t);
     const ws = weekStart(t);
     const weekW = workoutsInWeek(ws);
     const wDays = new Set(weekW.map((w) => w.date));
@@ -254,9 +258,9 @@
 
     h += `<div class="grid-2">`;
     h += `<div class="card" data-action="goto" data-tab="food" style="cursor:pointer"><div class="card-head"><h2>Calories</h2></div>
-      <div class="big">${fmt(eaten, 0)}<small> / ${fmt(st.calorieTarget, 0)}</small></div>
-      <div class="progress ${eaten > st.calorieTarget ? 'over' : ''}"><i style="width:${Math.min(100, (eaten / (st.calorieTarget || 1)) * 100)}%"></i></div>
-      <div class="sub">${eaten <= st.calorieTarget ? fmt(st.calorieTarget - eaten, 0) + ' left' : fmt(eaten - st.calorieTarget, 0) + ' over'} · ${fmt(protein, 0)}g protein</div></div>`;
+      <div class="big">${fmt(eaten, 0)}<small> / ${fmt(calT, 0)}</small></div>
+      <div class="progress ${eaten > calT ? 'over' : ''}"><i style="width:${Math.min(100, (eaten / (calT || 1)) * 100)}%"></i></div>
+      <div class="sub">${eaten <= calT ? fmt(calT - eaten, 0) + ' left' : fmt(eaten - calT, 0) + ' over'} · ${fmt(protein, 0)}g protein</div></div>`;
     h += `<div class="card" data-action="goto" data-tab="train" style="cursor:pointer"><div class="card-head"><h2>Workouts</h2></div>
       <div class="big">${wDays.size}<small> / ${st.workoutsPerWeek} this week</small></div>
       <div class="week">${[0, 1, 2, 3, 4, 5, 6].map((i) => { const d = addDays(ws, i); return `<div class="${wDays.has(d) ? 'on' : ''} ${d === t ? 'today' : ''}"><i></i>${'MTWTFSS'[i]}</div>`; }).join('')}</div></div>`;
@@ -303,6 +307,9 @@
     const eaten = sumKcal(items), protein = sumProtein(items);
     let h = `<div class="daynav"><button class="btn small" data-action="food-day" data-delta="-1">‹</button>
       <strong>${relDay(d)}</strong><button class="btn small" data-action="food-day" data-delta="1" ${d >= todayISO() ? 'disabled' : ''}>›</button></div>`;
+    const planOn = window.Nutrition && Nutrition.active();
+    if (window.Nutrition && (planOn || !st.hideNutritionPrompt)) h += Nutrition.foodCard(d, items);
+    if (!planOn) {
     h += `<div class="card ring">${Charts.ring(eaten, st.calorieTarget)}<div><div class="big">${fmt(eaten, 0)}<small> kcal</small></div>
       <div class="sub">Target ${fmt(st.calorieTarget, 0)} · ${eaten <= st.calorieTarget ? fmt(st.calorieTarget - eaten, 0) + ' left' : `<span class="bad">${fmt(eaten - st.calorieTarget, 0)} over</span>`}</div>
       <div class="sub">Protein ${fmt(protein, 0)} / ${fmt(st.proteinTarget, 0)} g</div>
@@ -320,6 +327,9 @@
         <span class="num">${fmt(f.kcal, 0)}</span><button class="del" data-action="del-food" data-id="${f.id}" aria-label="Delete">×</button></li>`).join('')}</ul>`;
     });
     h += `</div>`;
+    } else {
+      h += `<button class="btn block" data-action="add-food" style="margin-bottom:14px">+ Log other food</button>`;
+    }
 
     // quick re-add from recent
     const seen = new Set(), recent = [];
@@ -334,7 +344,7 @@
     for (let i = 13; i >= 0; i--) { const dd = addDays(todayISO(), -i); days.push({ label: Charts.shortDate(dd), value: sumKcal(foodOn(dd)) }); }
     const logged = days.filter((x) => x.value);
     const avg = logged.length ? Math.round(logged.reduce((a, x) => a + x.value, 0) / logged.length) : 0;
-    h += `<div class="card"><div class="card-head"><h2>Last 14 days</h2><span class="sub">${avg ? 'avg ' + fmt(avg, 0) : ''}</span></div>${Charts.bars(days, { target: st.calorieTarget, overIsBad: true, label: 'Daily calories' })}</div>`;
+    h += `<div class="card"><div class="card-head"><h2>Last 14 days</h2><span class="sub">${avg ? 'avg ' + fmt(avg, 0) : ''}</span></div>${Charts.bars(days, { target: kcalTarget(todayISO()), overIsBad: true, label: 'Daily calories' })}</div>`;
     return h;
   };
 
@@ -413,7 +423,7 @@
 
     if (seg === 'photos') {
       h += `<div class="card"><div class="card-head"><h2>Progress photos</h2><button class="btn small primary" data-action="add-photo">+ Photo</button></div>
-        <p class="sub" style="margin-top:0">Same spot, same light, same time of day. Tap two photos to compare.</p><div id="photo-grid" class="photos"><div class="empty">Loading…</div></div></div>
+        <p class="sub" style="margin-top:0">Same spot, same light, same time of day. Tap two photos to compare.</p><div id="photo-grid" class="photos"><div class="empty">Loading…</div></div><div id="photo-share"></div></div>
         <div id="compare"></div>`;
     }
     return h;
@@ -512,12 +522,22 @@
   async function renderPhotos() {
     const grid = $('#photo-grid');
     if (!grid) return;
-    const photos = (await DB.allPhotos()).sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
-    if (!photos.length) { grid.innerHTML = '<div class="empty" style="grid-column:1/-1">No photos yet. Your first one is your "before".</div>'; return; }
-    grid.innerHTML = photos.map((p) => {
-      if (!ui.photoUrls.has(p.id)) ui.photoUrls.set(p.id, URL.createObjectURL(p.blob));
-      return `<button data-action="pick-photo" data-id="${p.id}" class="${ui.compare.includes(p.id) ? 'picked' : ''}"><img src="${ui.photoUrls.get(p.id)}" alt="Progress photo ${p.date}" loading="lazy"><span>${prettyDate(p.date, { month: 'short', day: 'numeric', year: '2-digit' })}${p.pose ? ' · ' + esc(p.pose) : ''}</span></button>`;
-    }).join('');
+    let photos;
+    if (ui.viewAs) {
+      // coach viewing a client: only the photos the client chose to share
+      photos = Object.entries(S.sharedPhotos || {}).map(([id, v]) => ({ id, ...v }));
+      grid.innerHTML = photos.length ? '<div class="empty" style="grid-column:1/-1">Loading photos…</div>' : '<div class="empty" style="grid-column:1/-1">This client hasn\'t shared any photos with you.</div>';
+      await Promise.all(photos.map(async (p) => { if (!ui.photoUrls.has(p.id)) { const u = window.Cloud && await Cloud.photoUrl(p.path); if (u) ui.photoUrls.set(p.id, u); } }));
+      if (!$('#photo-grid')) return;
+    } else {
+      photos = await DB.allPhotos();
+      photos.forEach((p) => { if (!ui.photoUrls.has(p.id)) ui.photoUrls.set(p.id, URL.createObjectURL(p.blob)); });
+    }
+    photos.sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+    if (!photos.length) { if (!ui.viewAs) grid.innerHTML = '<div class="empty" style="grid-column:1/-1">No photos yet. Your first one is your "before".</div>'; renderShareBar([]); return; }
+    const shared = S.sharedPhotos || {};
+    grid.innerHTML = photos.map((p) => `<button data-action="pick-photo" data-id="${p.id}" class="${ui.compare.includes(p.id) ? 'picked' : ''}"><img src="${ui.photoUrls.get(p.id) || ''}" alt="Progress photo ${p.date}" loading="lazy"><span>${prettyDate(p.date, { month: 'short', day: 'numeric', year: '2-digit' })}${p.pose ? ' · ' + esc(p.pose) : ''}${!ui.viewAs && shared[p.id] ? ' · 👁 coach' : ''}</span></button>`).join('');
+    renderShareBar(photos);
     const cmp = $('#compare');
     const picked = ui.compare.map((id) => photos.find((p) => p.id === id)).filter(Boolean).sort((a, b) => a.date.localeCompare(b.date));
     if (picked.length === 2) {
@@ -529,6 +549,28 @@
       cmp.innerHTML = `<div class="card"><div class="row" style="justify-content:space-between"><span class="sub">1 selected — pick another to compare, or</span>
         <button class="btn small" data-action="view-photo" data-id="${picked[0].id}">Open</button></div></div>`;
     } else cmp.innerHTML = '';
+  }
+
+  // Sharing progress photos with the coach (optional, per photo)
+  function renderShareBar(photos) {
+    const bar = $('#photo-share');
+    if (!bar) return;
+    if (ui.viewAs || !window.Cloud || !Cloud.canSharePhotos()) { bar.innerHTML = ''; return; }
+    const shared = S.sharedPhotos || {};
+    const n = photos.filter((p) => shared[p.id]).length;
+    bar.innerHTML = `<p class="sub" style="margin:10px 0 6px">🔒 Photos stay on this phone unless you share them. ${n ? `<strong>${n} shared</strong> with your coach.` : 'None shared with your coach.'} Open a photo to share or unshare it.</p>
+      ${photos.length > n ? `<button class="btn small" data-action="photo-share-all">Share all with my coach</button>` : ''}`;
+  }
+  async function setShared(id, on) {
+    if (on) {
+      const p = await DB.getPhoto(id);
+      const meta = await Cloud.sharePhoto(p);
+      S.sharedPhotos = S.sharedPhotos || {}; S.sharedPhotos[id] = meta;
+    } else {
+      await Cloud.unsharePhoto(id, (S.sharedPhotos || {})[id]);
+      if (S.sharedPhotos) delete S.sharedPhotos[id];
+    }
+    save();
   }
 
   function compressImage(file, maxDim = 1400, quality = 0.82) {
@@ -549,6 +591,20 @@
   }
 
   // ---------- forms ----------
+  // Meal choices: the nutrition plan's meals for that day (Meal 1…, Workout shake) or the classic four
+  function mealOptions(iso, current) {
+    const slots = window.Nutrition && Nutrition.slotsFor(iso);
+    const list = slots ? [...slots, 'Other'] : ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
+    if (current && !list.includes(current)) list.push(current);
+    return list;
+  }
+  function defMealFor(iso, classic) {
+    const slots = window.Nutrition && Nutrition.slotsFor(iso);
+    if (!slots) return classic;
+    const logged = new Set(foodOn(iso).map((x) => x.meal));
+    return slots.find((m) => !logged.has(m)) || slots[slots.length - 1];
+  }
+
   // Log-food form with search (your foods, built-in USDA database, Open Food Facts) and barcode scanning.
   function foodForm(f = {}) {
     const isEdit = !!f.id;
@@ -564,7 +620,7 @@
       <div class="fields-2">${field('Calories', inNum('kcal', f.kcal, 'required min="0"'))}${field('Protein (g)', inNum('protein', f.protein, 'min="0"'))}</div>
       <div class="fields-2">${field('Carbs (g)', inNum('carbs', f.carbs, 'min="0"'))}${field('Fat (g)', inNum('fat', f.fat, 'min="0"'))}</div>
       <input type="hidden" name="serving" value="${esc(f.serving || '')}">
-      <div class="fields-2">${field('Meal', `<select name="meal">${['Breakfast', 'Lunch', 'Dinner', 'Snack'].map((m) => `<option ${(f.meal || defMeal) === m ? 'selected' : ''}>${m}</option>`).join('')}</select>`)}
+      <div class="fields-2">${field('Meal', `<select name="meal">${mealOptions(f.date || ui.foodDate, f.meal).map((m) => `<option ${(f.meal || defMealFor(f.date || ui.foodDate, defMeal)) === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>`)}
       ${field('Time', `<input type="time" name="time" value="${f.time || nowTime()}">`)}</div>
       ${field('Date', inDate('date', f.date || ui.foodDate))}`, (fd) => {
       const rec = { id: f.id || uid(), name: fd.get('name').trim(), kcal: num(fd.get('kcal')) || 0, protein: num(fd.get('protein')), carbs: num(fd.get('carbs')), fat: num(fd.get('fat')),
@@ -1100,6 +1156,7 @@
       if (i < 0 && activeHabits().every((h) => habitDone(t, h.id))) toast('All habits done today 🔥');
     },
     'add-food': () => foodForm(),
+    'add-food-slot': (el) => foodForm({ meal: el.dataset.slot, date: ui.foodDate }),
     'edit-food': (el) => foodForm(find('food', el.dataset.id)),
     'quick-food': (el) => { const f = find('food', el.dataset.id); S.food.push({ ...f, id: uid(), date: ui.foodDate, time: nowTime() }); save(); render(); toast(`Added ${f.name}`); },
     'del-food': (el) => { S.food = S.food.filter((x) => x.id !== el.dataset.id); save(); render(); },
@@ -1126,10 +1183,27 @@
     },
     'clear-compare': () => { ui.compare = []; renderPhotos(); },
     'view-photo': async (el) => {
-      const p = await DB.getPhoto(el.dataset.id);
+      const p = ui.viewAs ? { id: el.dataset.id, ...(S.sharedPhotos || {})[el.dataset.id] } : await DB.getPhoto(el.dataset.id);
+      const isShared = !!(S.sharedPhotos || {})[p.id];
+      const canShare = !ui.viewAs && window.Cloud && Cloud.canSharePhotos();
       openModal(`<h2>${prettyDate(p.date, { month: 'long', day: 'numeric', year: 'numeric' })}${p.pose ? ' · ' + esc(p.pose) : ''}</h2>
         <img src="${ui.photoUrls.get(p.id)}" alt="" style="width:100%;border-radius:12px;display:block;margin-bottom:12px">
-        <button class="btn danger small" data-modal-action="del-photo" data-id="${p.id}">Delete photo</button>`, null, { hideSave: true });
+        ${canShare ? `<label class="ed-check" style="margin-bottom:12px"><input type="checkbox" data-photo-share="${p.id}" ${isShared ? 'checked' : ''}><span>Share this photo with my coach</span></label>` : ''}
+        ${ui.viewAs ? '' : `<button class="btn danger small" data-modal-action="del-photo" data-id="${p.id}">Delete photo</button>`}`, null, { hideSave: true });
+      const cb = document.querySelector('[data-photo-share]');
+      if (cb) cb.addEventListener('change', async () => {
+        cb.disabled = true;
+        try { await setShared(p.id, cb.checked); toast(cb.checked ? 'Shared with your coach' : 'No longer shared (removed from your coach\'s view)'); }
+        catch (e) { cb.checked = !cb.checked; toast('Couldn\'t update sharing: ' + e.message); }
+        cb.disabled = false;
+      });
+    },
+    'photo-share-all': async () => {
+      if (!confirm('Share all your progress photos with your coach? You can unshare any photo later.')) return;
+      const all = await DB.allPhotos();
+      let n = 0;
+      for (const p of all) { if (!(S.sharedPhotos || {})[p.id]) { try { await setShared(p.id, true); n++; } catch (e) { toast('Stopped: ' + e.message); break; } } }
+      toast(`Shared ${n} photo${n === 1 ? '' : 's'} with your coach`); render();
     },
     'journal-today': () => journalForm(),
     'edit-journal': (el) => journalForm(find('journal', el.dataset.id)),
@@ -1142,6 +1216,7 @@
   };
   modalActions['del-photo'] = async (b) => {
     if (!confirm('Delete this photo?')) return;
+    if ((S.sharedPhotos || {})[b.dataset.id]) { try { await setShared(b.dataset.id, false); } catch (_) { /* offline: removed on next sync */ } }
     await DB.deletePhoto(b.dataset.id);
     const u = ui.photoUrls.get(b.dataset.id); if (u) URL.revokeObjectURL(u); ui.photoUrls.delete(b.dataset.id);
     ui.compare = ui.compare.filter((x) => x !== b.dataset.id);
@@ -1217,6 +1292,7 @@
     field, inNum, setTab, ui, views, actions, modalActions, TITLES, PARENT, enterViewAs,
   });
 
+  if (window.Nutrition) Nutrition.init({ getState: () => S, save, render, esc, toast, todayISO, uid, openModal, field, inNum, ui, actions });
   if (window.Editor) Editor.init({ esc, render, toast, setTab, openModal, ui, views, actions, TITLES, PARENT });
 
   // ---------- app updates ----------

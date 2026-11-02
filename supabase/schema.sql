@@ -277,11 +277,13 @@ language sql security definer set search_path = public as $$
 $$;
 
 -- Coach dashboard: one row per client with recent activity.
+drop function if exists public.coach_overview();
 create or replace function public.coach_overview()
 returns table (
   client_id uuid, email text, full_name text, joined timestamptz, last_activity timestamptz,
   workouts_7d int, food_days_7d int, journal_days_7d int,
-  last_weight numeric, last_weight_date text, prev_weight numeric, program jsonb, unread_notes int
+  last_weight numeric, last_weight_date text, prev_weight numeric, program jsonb, unread_notes int,
+  nutrition jsonb, shared_photos int
 )
 language sql stable security definer set search_path = public as $$
   select p.id, p.email, p.full_name, p.created_at,
@@ -294,7 +296,9 @@ language sql stable security definer set search_path = public as $$
        and (e.data->>'date') >= to_char(current_date - 6, 'YYYY-MM-DD')),
     w.weight, w.wdate, w2.weight,
     (select e.data->'program' from entries e where e.user_id = p.id and e.kind = 'program' and e.id = 'main' and not e.deleted),
-    (select count(*)::int from coach_notes n where n.client_id = p.id and n.read_at is null)
+    (select count(*)::int from coach_notes n where n.client_id = p.id and n.read_at is null),
+    (select jsonb_build_object('profile', e.data->'profile') from entries e where e.user_id = p.id and e.kind = 'nutrition' and e.id = 'main' and not e.deleted),
+    (select count(*)::int from entries e where e.user_id = p.id and e.kind = 'photo' and not e.deleted)
   from profiles p
   left join lateral (
     select (e.data->>'weight')::numeric as weight, e.data->>'date' as wdate from entries e
@@ -327,3 +331,22 @@ grant execute on function public.coach_overview() to authenticated;
 grant select, insert, update, delete on public.entries, public.plans, public.plan_access, public.invites, public.coach_notes to authenticated;
 grant select, update on public.profiles to authenticated;
 revoke all on public.profiles, public.entries, public.plans, public.plan_access, public.invites, public.coach_notes from anon;
+
+-- ---------- progress photos the client chose to share with their coach ----------
+-- Private bucket; files live at <client id>/<photo id>.jpg. The client can add/remove their own;
+-- their coach can view them. Nobody else can.
+insert into storage.buckets (id, name, public) values ('progress-photos', 'progress-photos', false)
+on conflict (id) do nothing;
+
+create or replace function public.photo_owner(path text) returns uuid
+language sql immutable as $$
+  select case when split_part(path, '/', 1) ~ '^[0-9a-fA-F-]{36}$' then split_part(path, '/', 1)::uuid end;
+$$;
+
+drop policy if exists "progress photos own" on storage.objects;
+create policy "progress photos own" on storage.objects for all to authenticated
+  using (bucket_id = 'progress-photos' and public.photo_owner(name) = auth.uid())
+  with check (bucket_id = 'progress-photos' and public.photo_owner(name) = auth.uid());
+drop policy if exists "progress photos coach read" on storage.objects;
+create policy "progress photos coach read" on storage.objects for select to authenticated
+  using (bucket_id = 'progress-photos' and public.coaches(public.photo_owner(name)));
