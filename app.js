@@ -21,7 +21,7 @@
   const relDay = (iso) => { const diff = daysBetween(iso, todayISO()); return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : prettyDate(iso); };
   const byDateDesc = (a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || ''));
 
-  const APP_VERSION = '2026.11.03-f';
+  const APP_VERSION = '2026.11.03-g';
   // ---------- state ----------
   const DEFAULT_STATE = () => ({
     version: 1,
@@ -607,6 +607,18 @@
   }
 
   // Log-food form with search (your foods, built-in USDA database, Open Food Facts) and barcode scanning.
+  const fracTxt = (n) => { const w = Math.floor(n), r = Math.round((n - w) * 4) / 4, f = { 0.25: '¼', 0.5: '½', 0.75: '¾' }[r]; return r === 1 ? String(w + 1) : f ? (w ? w : '') + f : fmt(n); };
+  const amountLabel = (qty, unit) => unit === 'g' ? `${fmt(qty)} g` : unit === 'serving' ? `${fracTxt(qty)} ${qty === 1 ? 'serving' : 'servings'}` : `${fmt(qty)} × ${unit}`;
+  // How much of what was logged: stored on new entries, worked out from the label on older ones.
+  function amountOf(f) {
+    if (f.qty > 0 && f.unit) return { qty: f.qty, unit: f.unit };
+    const s = (f.serving || '').trim(), F = { '¼': 0.25, '½': 0.5, '¾': 0.75 };
+    let m = s.match(/^(\d*)([¼½¾])?\s*servings?$/);
+    if (m && (m[1] || m[2])) return { qty: (Number(m[1]) || 0) + (F[m[2]] || 0), unit: 'serving' };
+    m = s.match(/^([\d.]+) g$/); if (m) return { qty: Number(m[1]), unit: 'g' };
+    m = s.match(/^([\d.]+) × (.+)$/); if (m) return { qty: Number(m[1]), unit: m[2] };
+    return { qty: 1, unit: s || 'serving' };
+  }
   function foodForm(f = {}) {
     const isEdit = !!f.id;
     const hr = new Date().getHours();
@@ -618,21 +630,39 @@
         <div id="fresults"></div></div>`}
       <div id="fpick"></div>
       ${field('What', inText('name', f.name, `required ${isEdit ? 'autofocus' : ''} placeholder="Or type it in yourself" autocomplete="off"`))}
+      ${isEdit ? `<label class="field"><span>Amount</span><div class="portion"><input type="number" id="eqty" inputmode="decimal" step="any" min="0" value="${amountOf(f).qty}">
+        <span class="sub" style="align-self:center;flex:1">${esc(amountOf(f).unit === 'serving' ? 'serving(s)' : amountOf(f).unit)}</span></div></label>
+        <p class="hint" style="margin:-4px 0 10px">Change the amount and calories and macros update to match.</p>` : ''}
       <div class="fields-2">${field('Calories', inNum('kcal', f.kcal, 'required min="0"'))}${field('Protein (g)', inNum('protein', f.protein, 'min="0"'))}</div>
       <div class="fields-2">${field('Carbs (g)', inNum('carbs', f.carbs, 'min="0"'))}${field('Fat (g)', inNum('fat', f.fat, 'min="0"'))}</div>
-      <input type="hidden" name="serving" value="${esc(f.serving || '')}">
+      <input type="hidden" name="serving" value="${esc(f.serving || '')}"><input type="hidden" name="qty" value="${f.qty || ''}"><input type="hidden" name="unit" value="${esc(f.unit || '')}">
       <div class="fields-2">${field('Meal', `<select name="meal">${mealOptions(f.date || ui.foodDate, f.meal).map((m) => `<option ${(f.meal || defMealFor(f.date || ui.foodDate, defMeal)) === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>`)}
       ${field('Time', `<input type="time" name="time" value="${f.time || nowTime()}">`)}</div>
       ${field('Date', inDate('date', f.date || ui.foodDate))}`, (fd) => {
       const rec = { id: f.id || uid(), name: fd.get('name').trim(), kcal: num(fd.get('kcal')) || 0, protein: num(fd.get('protein')), carbs: num(fd.get('carbs')), fat: num(fd.get('fat')),
         serving: fd.get('serving') || '', meal: fd.get('meal'), time: fd.get('time'), date: fd.get('date') };
+      if (num(fd.get('qty')) > 0 && fd.get('unit')) { rec.qty = num(fd.get('qty')); rec.unit = fd.get('unit'); }
+      ['barcode'].forEach((k) => { if (f[k] != null) rec[k] = f[k]; });
       if (isEdit) S.food = S.food.map((x) => (x.id === f.id ? rec : x)); else S.food.push(rec);
       save(); toast(`Logged ${rec.kcal} kcal`);
     });
-    if (isEdit) return;
+    if (isEdit) {
+      const els = modalForm.elements, a0 = amountOf(f), base = {};
+      ['kcal', 'protein', 'carbs', 'fat'].forEach((k) => { base[k] = (f[k] || 0) / (a0.qty || 1); });
+      // editing a number by hand re-bases the per-unit values on the current amount
+      ['kcal', 'protein', 'carbs', 'fat'].forEach((k) => els[k].addEventListener('input', () => { base[k] = (num(els[k].value) || 0) / (Number($('#eqty').value) || 1); }));
+      $('#eqty').addEventListener('input', () => {
+        const q = Number($('#eqty').value);
+        if (!(q > 0)) return;
+        els.kcal.value = Math.round(base.kcal * q);
+        ['protein', 'carbs', 'fat'].forEach((k) => { els[k].value = Math.round(base[k] * q * 10) / 10; });
+        els.qty.value = q; els.unit.value = a0.unit; els.serving.value = amountLabel(q, a0.unit);
+      });
+      return;
+    }
     const input = $('#fsearch');
     // manual edits to the name clear the "serving" label from a previous pick
-    modalForm.elements.name.addEventListener('input', () => { modalForm.elements.serving.value = ''; });
+    modalForm.elements.name.addEventListener('input', () => { ['serving', 'qty', 'unit'].forEach((k) => { modalForm.elements[k].value = ''; }); });
     let seq = 0, debounce;
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(debounce); runSearch(true); } });
     input.addEventListener('input', () => { clearTimeout(debounce); debounce = setTimeout(() => runSearch(false), 160); });
@@ -734,9 +764,9 @@
       if (!n) { $('#pout').textContent = 'No nutrition data for this portion. Enter it below.'; return; }
       els.name.value = FoodLookup.displayName(food);
       els.kcal.value = n.k; els.protein.value = n.p; els.carbs.value = n.c; els.fat.value = n.f;
-      const frac = (n) => { const w = Math.floor(n), r = Math.round((n - w) * 4) / 4, f = { 0.25: '¼', 0.5: '½', 0.75: '¾' }[r]; return r === 1 ? String(w + 1) : f ? (w ? w : '') + f : fmt(n); };
-      const label = pi === -1 ? `${fmt(qty)} g` : food.portions[pi][0] === 'serving' ? `${frac(qty)} ${qty === 1 ? 'serving' : 'servings'}` : `${fmt(qty)} × ${food.portions[pi][0]}`;
-      els.serving.value = food.source === 'Mine' && qty === 1 ? food.entry.serving || '' : food.source === 'Mine' ? `${fmt(qty)} × ${food.entry.serving || 'serving'}` : label;
+      const unit = pi === -1 ? 'g' : food.source === 'Mine' ? food.entry.serving || 'serving' : food.portions[pi][0];
+      els.serving.value = food.source === 'Mine' && qty === 1 ? food.entry.serving || '' : amountLabel(qty, unit);
+      els.qty.value = qty || ''; els.unit.value = unit;
       const grams = pi === -1 ? qty : food.portions[pi][1] ? food.portions[pi][1] * qty : null;
       $('#pout').innerHTML = `<strong>${n.k} kcal</strong> · P ${n.p} · C ${n.c} · F ${n.f}${grams ? ` <span style="opacity:.7">(${fmt(grams, 0)} g)</span>` : ''}`;
     };
@@ -759,7 +789,7 @@
   };
   modalActions.unpick = () => {
     $('#fpick').innerHTML = '';
-    ['name', 'kcal', 'protein', 'carbs', 'fat', 'serving'].forEach((k) => { modalForm.elements[k].value = ''; });
+    ['name', 'kcal', 'protein', 'carbs', 'fat', 'serving', 'qty', 'unit'].forEach((k) => { modalForm.elements[k].value = ''; });
     const inp = $('#fsearch'); if (inp) { inp.dispatchEvent(new Event('input')); inp.focus(); }
   };
   modalActions.scan = () => {

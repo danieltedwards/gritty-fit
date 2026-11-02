@@ -397,10 +397,10 @@
         const sel = document.getElementById('lib-meal'); const mealLabel = sel ? sel.value : m.label;
         if (src === 'mine') {
           it.items.forEach((x) => st.food.push({ id: C.uid(), date: nm.date, time, meal: mealLabel, name: x.name, serving: s === 1 ? x.serving : `${fmtQ(s)}× ${x.serving || 'serving'}`,
-            kcal: Math.round((x.kcal || 0) * s), protein: Math.round((x.protein || 0) * s), carbs: Math.round((x.carbs || 0) * s), fat: Math.round((x.fat || 0) * s) }));
+            kcal: Math.round((x.kcal || 0) * s), protein: Math.round((x.protein || 0) * s), carbs: Math.round((x.carbs || 0) * s), fat: Math.round((x.fat || 0) * s), qty: s, unit: x.serving || 'serving' }));
         } else {
           const v = scaled(it.per, s);
-          st.food.push({ id: C.uid(), date: nm.date, time, meal: mealLabel, name: it.name, serving: `${fmtQ(s)} serving${s > 1 ? 's' : ''}`, kcal: v.kcal, protein: v.p, carbs: v.c, fat: v.f, recipeId: it.id });
+          st.food.push({ id: C.uid(), date: nm.date, time, meal: mealLabel, name: it.name, serving: `${fmtQ(s)} serving${s > 1 ? 's' : ''}`, kcal: v.kcal, protein: v.p, carbs: v.c, fat: v.f, recipeId: it.id, qty: s, unit: 'serving' });
         }
         C.save(); C.closeModal(); C.toast(`${it.name} logged to ${mealLabel}`); C.render();
       };
