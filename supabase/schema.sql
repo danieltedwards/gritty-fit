@@ -217,6 +217,17 @@ create policy "notes client read" on public.coach_notes for select to authentica
 
 -- ---------- actions the app calls ----------
 
+-- Creates your profile if it's missing (e.g. you signed up before this schema was installed).
+create or replace function public.ensure_profile() returns void
+language sql security definer set search_path = public as $$
+  insert into profiles (id, email)
+  select u.id, u.email from auth.users u where u.id = auth.uid()
+  on conflict (id) do nothing;
+$$;
+
+-- Backfill profiles for anyone who signed up before this schema was installed.
+insert into public.profiles (id, email) select id, email from auth.users on conflict (id) do nothing;
+
 -- The first person to call this becomes the coach. After that it always fails.
 create or replace function public.claim_coach() returns text
 language plpgsql security definer set search_path = public as $$
@@ -302,11 +313,13 @@ $$;
 revoke all on function public.claim_coach() from public, anon;
 revoke all on function public.accept_invite(text) from public, anon;
 revoke all on function public.mark_notes_read() from public, anon;
+revoke all on function public.ensure_profile() from public, anon;
 revoke all on function public.remove_client(uuid) from public, anon;
 revoke all on function public.coach_overview() from public, anon;
 grant execute on function public.claim_coach() to authenticated;
 grant execute on function public.accept_invite(text) to authenticated;
 grant execute on function public.mark_notes_read() to authenticated;
+grant execute on function public.ensure_profile() to authenticated;
 grant execute on function public.remove_client(uuid) to authenticated;
 grant execute on function public.coach_overview() to authenticated;
 

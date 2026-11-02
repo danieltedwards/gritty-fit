@@ -153,12 +153,19 @@
     if (window.Training) Training.resetPlans();
     C.softRender();
   }
+  let profileError = '';
   async function loadProfile() {
+    profileError = '';
     for (let i = 0; i < 3; i++) {
-      const { data } = await sb.from('profiles').select('*').eq('id', user.id).maybeSingle();
+      const { data, error } = await sb.from('profiles').select('*').eq('id', user.id).maybeSingle();
       if (data) { profile = data; break; }
-      await new Promise((r) => setTimeout(r, 800));
+      if (error) profileError = error.message;
+      // missing profile (e.g. account created before the database was set up): create it
+      const r = await sb.rpc('ensure_profile');
+      if (r.error && /ensure_profile|function/i.test(r.error.message)) profileError = 'Database setup is out of date. Run supabase/schema.sql again in Supabase → SQL Editor.';
+      await new Promise((res) => setTimeout(res, 600));
     }
+    if (profile) profileError = '';
     coach = null;
     if (profile && profile.coach_id) {
       const { data } = await sb.from('profiles').select('id,full_name,email').eq('id', profile.coach_id).maybeSingle();
@@ -219,7 +226,7 @@
     if (!sb) return '';
     if (!user) {
       return `<div class="sub" style="font-weight:700;margin:10px 0 8px">Account</div>
-        <p class="hint">Sign in to back up and sync your data and connect with your coach.</p>
+        <p class="hint"><strong>You're not signed in.</strong> Sign in to sync your data, connect with your coach, or (coach) open your dashboard.</p>
         <button class="btn primary block" data-modal-action="cloud-signin" style="margin-bottom:12px">Sign in with email</button>`;
     }
     const role = profile && profile.role === 'coach' ? 'Coach' : 'Client';
@@ -229,12 +236,13 @@
         <div><strong>${esc(user.email)}</strong> <span class="chip">${role}</span></div>
         ${coach ? `<div class="sub">Coach: ${esc(coach.full_name || coach.email)}</div>` : ''}
         <div class="sub">Last synced: ${last}${status.state === 'error' ? ` · <span class="bad">${esc(status.msg)}</span>` : ''}</div>
+        ${!profile ? `<p class="bad" style="margin:8px 0">Your account profile didn't load${profileError ? ': ' + esc(profileError) : ''}.</p><button class="btn small" data-modal-action="cloud-retry">Try again</button>` : ''}
         ${field('Your name', `<input type="text" name="cloud_name" value="${esc((profile && profile.full_name) || '')}" placeholder="Shown to your coach">`)}
         <div class="row"><button class="btn small" data-modal-action="cloud-sync">Sync now</button>
         ${profile && profile.role === 'coach' ? '<button class="btn small primary" data-modal-action="cloud-coach">Coach dashboard</button>' : ''}
         ${profile && profile.role !== 'coach' && !profile.coach_id ? '<button class="btn small" data-modal-action="cloud-invite">Enter invite code</button>' : ''}
         <button class="btn small" data-modal-action="cloud-signout">Sign out</button></div>
-        ${profile && profile.role !== 'coach' && !profile.coach_id ? '<p class="hint" style="margin:10px 0 0">Are you the coach? <a href="#" data-modal-action="cloud-claim" style="color:var(--accent);font-weight:650">Set up this account as the coach</a> (only works once).</p>' : ''}
+        ${profile && profile.role !== 'coach' && !profile.coach_id ? '<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)"><p class="hint" style="margin:0 0 8px">Are you the coach? This works once, for the first account only.</p><button class="btn block" data-modal-action="cloud-claim">🧢 Set up this account as the coach</button></div>' : ''}
       </div>`;
   }
   const field = (l, i) => C.field(l, i);
@@ -298,6 +306,7 @@
       C.toast('Signed in ✓ Syncing…');
       if (data && data.user) await onSignedIn(data.user);
     },
+    'cloud-retry': async () => { await loadProfile(); C.closeModal(); setTimeout(() => C.actions['open-settings'](), 0); },
     'cloud-sync': async () => { C.toast('Syncing…'); const n = await syncNow(); await loadProfile(); await loadNotes(); applyTargets(); C.toast(status.state === 'error' ? 'Sync failed: ' + status.msg : `Synced${n ? ` · ${n} update${n > 1 ? 's' : ''}` : ''} ✓`); },
     'cloud-signout': async () => {
       if (!confirm('Sign out? Your data stays on this device, and syncing stops until you sign in again.')) return;

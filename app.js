@@ -21,6 +21,7 @@
   const relDay = (iso) => { const diff = daysBetween(iso, todayISO()); return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : prettyDate(iso); };
   const byDateDesc = (a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || ''));
 
+  const APP_VERSION = '2026.11.02-b';
   // ---------- state ----------
   const DEFAULT_STATE = () => ({
     version: 1,
@@ -848,7 +849,8 @@
       <div class="sub" style="font-weight:700;margin:10px 0 8px">Your data</div>
       <p class="hint">${window.Cloud && Cloud.user ? 'Your data is saved on this device and synced to your account.' : 'Everything is stored only in this browser on this device. Sign in to sync it, or export a backup now and then — clearing browser data deletes it.'}</p>
       <div class="row" style="margin-bottom:10px"><button class="btn" data-modal-action="export">Export backup</button><button class="btn" data-modal-action="import">Import backup</button></div>
-      <button class="btn danger block" data-modal-action="wipe">Erase all data</button>`, (fd) => {
+      <button class="btn danger block" data-modal-action="wipe">Erase all data</button>
+      <p class="hint" style="text-align:center;margin:12px 0 0">GRIT ${APP_VERSION}</p>`, (fd) => {
       if (window.Cloud) Cloud.saveName(fd);
       const newUnits = fd.get('units');
       if (newUnits !== st.units) convertUnits(st.units, newUnits);

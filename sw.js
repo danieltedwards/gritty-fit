@@ -1,6 +1,6 @@
 // Offline support: cache the app shell, serve it when there's no network.
 // Bump VERSION whenever app files change so phones pick up the update.
-const VERSION = 'grit-v7';
+const VERSION = 'grit-v8';
 const SHELL = ['./', 'index.html', 'app.css', 'db.js', 'charts.js', 'food-lookup.js', 'health.js', 'training.js', 'cloud.js', 'app.js', 'config.js', 'vendor/supabase.js', 'plans/index.json', 'plans/pbbsw-phase-1.json', 'manifest.webmanifest', 'icon.svg', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', (e) => {
