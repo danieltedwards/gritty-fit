@@ -1191,6 +1191,7 @@
     document.querySelectorAll('.tabbar [data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === navTab));
     $('#back-btn').hidden = !PARENT[ui.tab];
     $('#back-btn').dataset.tab = PARENT[ui.tab] || '';
+    $('#back-btn').dataset.action = ui.tab === 'editor' ? 'ed-cancel' : 'goto';
     $('#view').innerHTML = (ui.viewAs ? `<div class="viewas"><span>👀 Viewing <strong>${esc(ui.viewAs.name)}</strong> · read-only</span><button class="btn small" data-action="exit-view-as">Exit</button></div>` : '') + views[ui.tab]();
     document.body.classList.toggle('viewing-as', !!ui.viewAs);
     Training.afterRender(ui.tab);
@@ -1216,6 +1217,8 @@
     field, inNum, setTab, ui, views, actions, modalActions, TITLES, PARENT, enterViewAs,
   });
 
+  if (window.Editor) Editor.init({ esc, render, toast, setTab, openModal, ui, views, actions, TITLES, PARENT });
+
   async function boot() {
     try {
       S = (await DB.getState()) || DEFAULT_STATE();
@@ -1228,7 +1231,7 @@
     try { const t = localStorage.getItem('gf-tab'); if (t && views[t]) ui.tab = t; } catch (_) { /* ignore */ }
     if (ui.tab === 'session' && !S.activeSession) ui.tab = 'train';
     if ((ui.tab === 'guide' && !ui.guidePlan) || ui.tab === 'plans') ui.tab = 'train';
-    if (ui.tab === 'coach') ui.tab = 'today';
+    if (ui.tab === 'coach' || ui.tab === 'editor') ui.tab = 'today';
     render();
     Training.preload();
     if (window.Cloud) Cloud.start().catch((e) => console.warn('cloud', e));

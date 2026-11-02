@@ -206,6 +206,21 @@
     return cloudPlans;
   }
 
+  async function savePlan(row, grantTo) {
+    const { error } = await sb.from('plans').upsert(row);
+    if (error) throw error;
+    if (grantTo) {
+      const r = await sb.from('plan_access').upsert({ plan_id: row.id, client_id: grantTo }, { onConflict: 'plan_id,client_id' });
+      if (r.error) throw r.error;
+    }
+    coachData = null;
+  }
+  async function deletePlan(id) {
+    const { error } = await sb.from('plans').delete().eq('id', id);
+    if (error) throw error;
+    coachData = null;
+  }
+
   // ---------- coach: view a client's app read-only ----------
   async function loadClientState(clientId) {
     const st = C.defaultState();
@@ -453,6 +468,35 @@
       };
       input.click();
     },
+    'coach-plan-new': () => Editor.open({ data: Editor.blankPlan(), isNew: true, row: { visibility: 'all', published: false } }),
+    'coach-plan-edit': async (el) => {
+      const plans = (coachData && coachData.plans) || await fetchPlans();
+      const p = plans.find((x) => x.id === el.dataset.id);
+      if (!p) { C.toast('Plan not found'); return; }
+      const cn = p.data.forClient && coachData && (coachData.clients.find((c) => c.client_id === p.data.forClient) || {});
+      Editor.open({ data: p.data, row: { visibility: p.visibility, published: p.published }, forClientName: cn ? (cn.full_name || cn.email || 'client') : null, grantTo: p.data.forClient || null });
+    },
+    'coach-customize': async (el) => {
+      const plans = await fetchPlans();
+      const clientId = el.dataset.id, name = el.dataset.name;
+      const existing = plans.find((p) => p.data.forClient === clientId && (!el.dataset.plan || p.id === el.dataset.plan || p.data.basedOn === el.dataset.plan));
+      if (existing) { Editor.open({ data: existing.data, row: { visibility: existing.visibility, published: existing.published }, forClientName: name, grantTo: clientId }); return; }
+      const templates = plans.filter((p) => !p.data.forClient);
+      if (!templates.length) { C.toast('Add a plan to your library first'); return; }
+      const startFrom = (base) => {
+        const data = JSON.parse(JSON.stringify(base.data));
+        data.id = `${base.id}--${clientId.slice(0, 8)}`;
+        data.basedOn = base.id; data.forClient = clientId; data.clientName = name;
+        data.tags = [...(data.tags || []).filter((t) => !/^For /.test(t)), 'For ' + name];
+        Editor.open({ data, isNew: true, row: { visibility: 'assigned', published: true }, forClientName: name, grantTo: clientId });
+        C.toast(`Editing ${name}'s copy. Only they will see it`);
+      };
+      const current = templates.find((p) => p.id === el.dataset.plan);
+      if (current) { startFrom(current); return; }
+      C.openModal(`<h2>Customize for ${esc(name)}</h2><p class="hint" style="margin-top:0">${esc(name)} isn't following a plan yet. Start their version from:</p>
+        ${C.field('Template', `<select name="base">${templates.map((p) => `<option value="${esc(p.id)}">${esc(p.data.name)}</option>`).join('')}</select>`)}
+        <p class="hint">They'll see it as "Made for you" in their plan list.</p>`, (fd) => { const b = templates.find((p) => p.id === fd.get('base')); setTimeout(() => startFrom(b), 0); }, { saveLabel: 'Start editing' });
+    },
     'coach-plan-set': async (el) => {
       const patch = {}; patch[el.dataset.field] = el.dataset.field === 'published' ? el.dataset.value === 'true' : el.dataset.value;
       const { error } = await sb.from('plans').update(patch).eq('id', el.dataset.id);
@@ -497,7 +541,7 @@
     if (!coachData) { if (!coachLoading) refreshCoach(); return '<div class="empty">Loading your clients…</div>'; }
     if (coachData.error) return `<div class="card"><p class="bad">${esc(coachData.error)}</p><button class="btn block" data-action="coach-refresh">Try again</button></div>`;
     const { clients, invites, plans, builtin } = coachData;
-    const planName = (id) => { const p = plans.find((x) => x.id === id); return p ? p.data.name : null; };
+    const planName = (id) => { const p = plans.find((x) => x.id === id); return p ? p.data.name + (p.data.forClient ? ' ✨' : '') : null; };
     const today = C.todayISO();
     let h = `<div class="row" style="margin-bottom:14px"><button class="btn primary" data-action="coach-invite">+ Invite client</button><button class="btn" data-action="coach-refresh">↻ Refresh</button></div>`;
     h += `<div class="card"><div class="card-head"><h2>Clients · ${clients.length}</h2></div>`;
@@ -515,6 +559,7 @@
           <button class="btn small" data-action="coach-note" data-id="${c.client_id}" data-name="${esc(name)}">Message</button>
           <button class="btn small" data-action="coach-targets" data-id="${c.client_id}" data-name="${esc(name)}">Targets</button>
           <button class="btn small" data-action="coach-access" data-id="${c.client_id}" data-name="${esc(name)}">Plans</button>
+          <button class="btn small" data-action="coach-customize" data-id="${c.client_id}" data-name="${esc(name)}" data-plan="${esc((c.program && c.program.planId) || '')}">Customize</button>
           <button class="del" data-action="coach-remove" data-id="${c.client_id}" data-name="${esc(name)}" aria-label="Remove client">×</button></div></div>`;
     }).join('') : '<div class="empty">No clients yet. Tap <strong>Invite client</strong> to send your first invite.</div>';
     h += '</div>';
@@ -523,14 +568,20 @@
         <button class="btn small" data-action="coach-show-invite" data-code="${esc(i.code)}" data-label="${esc(i.label || '')}">Share</button><button class="del" data-action="coach-del-invite" data-code="${esc(i.code)}" aria-label="Delete invite">×</button></li>`).join('')}</ul></div>`;
     }
     const notUploaded = builtin.filter((b) => !plans.some((p) => p.id === b.id));
-    h += `<div class="card"><div class="card-head"><h2>Plan library · ${plans.length}</h2><button class="btn small" data-action="coach-plan-file">Upload file</button></div>`;
-    h += plans.length ? plans.map((p) => `<div class="client"><div class="title" style="font-weight:800">${esc(p.data.name)}</div><div class="sub" style="font-size:13px">${esc(p.data.phase || '')} · ${p.data.weeks || '?'} weeks · ${(p.data.days || []).length} days</div>
+    const templates = plans.filter((p) => !p.data.forClient), custom = plans.filter((p) => p.data.forClient);
+    const clientName = (id) => { const c = clients.find((x) => x.client_id === id); return c ? (c.full_name || c.email) : 'former client'; };
+    h += `<div class="card"><div class="card-head"><h2>Plan library · ${templates.length}</h2><span class="row" style="gap:6px"><button class="btn small primary" data-action="coach-plan-new">+ New</button><button class="btn small" data-action="coach-plan-file">Upload</button></span></div>`;
+    h += templates.length ? templates.map((p) => `<div class="client"><div class="title" style="font-weight:800">${esc(p.data.name)}</div><div class="sub" style="font-size:13px">${esc(p.data.phase || '')} · ${p.data.weeks || '?'} weeks · ${(p.data.days || []).length} days</div>
         <div class="row" style="margin-top:8px">
           <button class="btn small ${p.visibility === 'all' ? 'primary' : ''}" data-action="coach-plan-set" data-id="${esc(p.id)}" data-field="visibility" data-value="all">All clients</button>
           <button class="btn small ${p.visibility === 'assigned' ? 'primary' : ''}" data-action="coach-plan-set" data-id="${esc(p.id)}" data-field="visibility" data-value="assigned">Selected clients</button>
           <button class="btn small" data-action="coach-plan-set" data-id="${esc(p.id)}" data-field="published" data-value="${!p.published}">${p.published ? 'Hide' : 'Publish'}</button>
-          <button class="btn small" data-action="plan-guide" data-id="${esc(p.id)}">View</button></div>
+          <button class="btn small" data-action="plan-guide" data-id="${esc(p.id)}">View</button>
+          <button class="btn small" data-action="coach-plan-edit" data-id="${esc(p.id)}">✏️ Edit</button></div>
         ${p.published ? '' : '<div class="sub bad" style="font-size:12px;margin-top:4px">Hidden from clients</div>'}</div>`).join('') : '<p class="sub">Your library is empty. Add the built-in plan below to publish it to clients.</p>';
+    if (custom.length) h += `<div class="res-head">Client versions</div>` + custom.map((p) => `<div class="client"><div class="title" style="font-weight:800">${esc(p.data.name)}</div>
+        <div class="sub" style="font-size:13px">For ${esc(clientName(p.data.forClient))}${p.data.basedOn ? ' · based on ' + esc((plans.find((x) => x.id === p.data.basedOn) || { data: { name: p.data.basedOn } }).data.name) : ''}</div>
+        <div class="row" style="margin-top:8px"><button class="btn small" data-action="coach-plan-edit" data-id="${esc(p.id)}">✏️ Edit</button><button class="btn small" data-action="plan-guide" data-id="${esc(p.id)}">View</button></div></div>`).join('');
     if (notUploaded.length) h += `<div class="res-head">Ready to add</div><ul class="list">${notUploaded.map((b) => `<li><div class="grow"><div class="title">${esc(b.name)}</div><div class="meta">${esc(b.phase || '')}</div></div><button class="btn small primary" data-action="coach-plan-upload" data-file="${esc(b.file)}">Add</button></li>`).join('')}</ul>`;
     h += '</div>';
     return h;
@@ -571,7 +622,7 @@
       document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && user) { pull(); loadNotes().then(() => C.softRender()); } else if (user) push(); });
       window.addEventListener('online', () => { if (user) syncNow(); });
     },
-    changed, settingsSection, saveName, todayCards, usesCloudPlans, fetchPlans,
+    changed, settingsSection, saveName, todayCards, usesCloudPlans, fetchPlans, savePlan, deletePlan,
     get user() { return user; }, get profile() { return profile; },
     get configured() { return !!sb; },
     // exposed for tests

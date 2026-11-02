@@ -20,8 +20,18 @@
         const isCoach = Cloud.profile && Cloud.profile.role === 'coach';
         const vis = rows.filter((r) => isCoach || r.published);
         vis.forEach((r) => planCache.set(r.id, r.data));
-        if (!vis.length && isCoach) return staticIndex(); // coach hasn't added plans yet
-        return vis.map((r) => metaOf(r.data));
+        // A client whose coach made them a custom version of their current plan switches to it
+        // automatically (same start date; history follows the exercise ids).
+        const me = Cloud.user && Cloud.user.id;
+        const st = S();
+        if (!isCoach && me && st.program) {
+          const mine = vis.find((r) => r.data.forClient === me && r.data.basedOn === st.program.planId);
+          if (mine) { st.program = { ...st.program, planId: mine.id }; C.save(); C.toast('Your coach customized your plan ✨'); }
+        }
+        const list = vis.filter((r) => !(isCoach && r.data.forClient)); // coach's own picker: templates only
+        if (!list.length && isCoach) return staticIndex(); // coach hasn't added plans yet
+        return list.map((r) => Object.assign(metaOf(r.data), { forMe: !!(me && r.data.forClient === me) }))
+          .sort((a, b) => (b.forMe ? 1 : 0) - (a.forMe ? 1 : 0));
       }) : staticIndex())
         .then((list) => (planIndex = list))
         .catch((e) => { indexPromise = null; throw e; });
@@ -116,8 +126,11 @@
     return '';
   }
 
+  // sessions of this plan this program week (a customized plan also counts sessions logged on its template)
   function sessionsThisProgramWeek(prog, wk) {
-    return S().workouts.filter((w) => w.planId === prog.planId && w.date >= wk.weekStart && w.date <= wk.weekEnd);
+    const plan = planCache.get(prog.planId);
+    const ids = new Set([prog.planId, plan && plan.basedOn].filter(Boolean));
+    return S().workouts.filter((w) => ids.has(w.planId) && w.sets && w.date >= wk.weekStart && w.date <= wk.weekEnd);
   }
   function nextDay(plan, prog, wk) {
     const done = new Set(sessionsThisProgramWeek(prog, wk).map((w) => w.dayId));
@@ -161,6 +174,12 @@
       ${plan.cardio ? `<div class="row" style="justify-content:space-between;margin-top:12px;flex-wrap:nowrap"><div><strong>Cardio</strong> <span class="sub">${cardioDone} / ${plan.cardio.perWeek.join('–')} this week · ${plan.cardio.minutes.join('–')} min</span></div>
         <button class="btn small" data-action="log-cardio" style="flex:none">+ Cardio</button></div>
         <div class="progress"><i style="width:${Math.min(100, (cardioDone / plan.cardio.perWeek[0]) * 100)}%"></i></div>` : ''}
+      ${(plan.extras || []).map((x) => {
+        const n = st.workouts.filter((w) => w.extraId === x.id && w.date >= wk.weekStart && w.date <= wk.weekEnd).length;
+        return `<div class="row" style="justify-content:space-between;margin-top:12px;flex-wrap:nowrap"><div><strong>${esc(x.name)}</strong> <span class="sub">${n} / ${x.perWeek || 1} this week${x.minutes ? ' · ' + x.minutes + ' min' : ''}</span>${x.notes ? `<div class="sub" style="font-size:12px">${esc(x.notes)}</div>` : ''}</div>
+          <button class="btn small" data-action="log-extra" data-id="${esc(x.id)}" style="flex:none">+ Log</button></div>
+          <div class="progress"><i style="width:${Math.min(100, (n / (x.perWeek || 1)) * 100)}%"></i></div>`;
+      }).join('')}
     </div>`;
     return h;
   }
@@ -189,7 +208,7 @@
     const cur = S().program;
     let h = '<p class="sub" style="margin-top:0">Choose the program you want to run. You can switch later; your history stays.</p>';
     if (!planIndex.length) h += '<div class="card"><div class="empty">Your coach hasn\'t made any plans available to you yet.</div></div>';
-    h += planIndex.map((p) => `<div class="card"><div style="font-weight:800;font-size:18px">${esc(p.name)}</div><div class="sub">${esc(p.phase || '')}</div>
+    h += planIndex.map((p) => `<div class="card" ${p.forMe ? 'style="border-color:var(--accent)"' : ''}>${p.forMe ? '<div class="week-pill" style="margin:0 0 8px">✨ Made for you</div>' : ''}<div style="font-weight:800;font-size:18px">${esc(p.name)}</div><div class="sub">${esc(p.phase || '')}</div>
       <p class="sub" style="margin:8px 0">${esc(p.summary || '')}</p>
       <div style="margin-bottom:10px">${[`${p.weeks} weeks`, p.daysPerWeek ? p.daysPerWeek + ' days/week' : '', ...(p.tags || [])].filter(Boolean).map((t) => `<span class="chip">${esc(t)}</span>`).join('')}</div>
       <div class="row"><button class="btn" data-action="plan-guide" data-id="${esc(p.id)}">View plan</button>
@@ -219,6 +238,11 @@
     if (plan.weekGuide) h += `<div class="card"><div class="card-head"><h2>Week by week</h2></div><table class="tbl"><tbody>${plan.weekGuide.map((g) => `<tr><td style="white-space:nowrap"><strong>Wk ${g.weeks.length > 1 ? g.weeks[0] + '–' + g.weeks[g.weeks.length - 1] : g.weeks[0]}</strong></td><td><strong>${esc(g.label)}</strong><br><span class="sub">${esc(g.effort)}</span></td></tr>`).join('')}</tbody></table>
       ${plan.blocksNote ? `<p class="sub">${esc(plan.blocksNote)}</p>` : plan.cycleWeeks && plan.weeks > plan.cycleWeeks ? `<p class="sub">The ${plan.cycleWeeks}-week block repeats through week ${plan.weeks}.</p>` : ''}
       ${plan.progression && plan.progression.loadJumps ? `<p class="sub">Load jumps: lower body ${esc(plan.progression.loadJumps.lower)}, upper body ${esc(plan.progression.loadJumps.upper)}.</p>` : ''}</div>`;
+    if ((plan.extras && plan.extras.length) || plan.cardio) {
+      h += `<div class="card"><div class="card-head"><h2>Each week</h2></div><ul class="list">
+        ${plan.cardio ? `<li><div class="grow"><div class="title">Cardio</div><div class="meta">${esc((plan.cardio.options || []).join(', '))}</div></div><span class="num">${plan.cardio.perWeek.join('–')}× · ${plan.cardio.minutes.join('–')} min</span></li>` : ''}
+        ${(plan.extras || []).map((x) => `<li><div class="grow"><div class="title">${esc(x.name)}</div>${x.notes ? `<div class="meta">${esc(x.notes)}</div>` : ''}</div><span class="num">${x.perWeek || 1}×${x.minutes ? ' · ' + x.minutes + ' min' : ''}</span></li>`).join('')}</ul></div>`;
+    }
     h += plan.days.map((d) => `<div class="card"><div class="card-head"><h2>${esc(d.label)}${d.optional ? ' · optional' : ''}</h2></div><div style="font-weight:800;font-size:18px">${esc(d.name)}</div>
       ${d.focus ? `<p class="sub"><em>${esc(d.focus)}</em></p>` : ''}
       ${d.warmup && plan.warmups && plan.warmups[d.warmup] ? `<p class="sub">Starts with the ${esc(plan.warmups[d.warmup].name)}.</p>` : ''}
@@ -490,6 +514,17 @@
         C.save(); C.toast('Cardio logged');
       });
     },
+    'log-extra': (el) => {
+      const st = S(), plan = st.program && planCache.get(st.program.planId);
+      const x = plan && (plan.extras || []).find((e) => e.id === el.dataset.id);
+      if (!x) return;
+      C.openModal(`<h2>Log ${esc(x.name)}</h2>
+        <div class="fields-2">${C.field('Minutes', C.inNum('minutes', x.minutes || 30, 'min="1" required'))}${C.field('Date', `<input type="date" name="date" value="${C.todayISO()}" required>`)}</div>
+        ${C.field('Notes', '<input type="text" name="notes" placeholder="How it went…">')}`, (fd) => {
+        st.workouts.push({ id: C.uid(), type: x.name, minutes: +fd.get('minutes') || null, date: fd.get('date'), notes: fd.get('notes').trim(), exercises: '', extraId: x.id, cardio: !!x.cardio, intensity: null });
+        C.save(); C.toast(`${x.name} logged`);
+      });
+    },
     'view-session': (el) => {
       const w = S().workouts.find((x) => x.id === el.dataset.id);
       if (!w) return;
@@ -542,6 +577,7 @@
     afterRender(tab) { if (tab === 'session') sessionClock(); },
     preload() { const p = S().program; if (p) loadPlan(p.planId).then(() => C.render()).catch(() => {}); },
     resetPlans() { planIndex = null; indexPromise = null; planCache.clear(); const p = S().program; if (p) loadPlan(p.planId).then(() => C.softRender ? C.softRender() : C.render()).catch(() => {}); },
-    trainCard, todayCard, summary, isCardio,
+    trainCard, todayCard, summary, isCardio, renderBody,
+    cachePlan(id, data) { planCache.set(id, data); },
   };
 })();

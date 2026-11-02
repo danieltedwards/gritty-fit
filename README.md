@@ -68,6 +68,18 @@ list (they can also type the code in Settings → Account → Enter invite code)
 - **Plans**: choose which "Selected clients" plans each client may pick.
 - **Plan library**: add plans, set each to **All clients** or **Selected clients**, hide/publish.
 
+### Writing and editing plans
+Coach dashboard → **Plan library**:
+- **✏️ Edit** any plan: details, week-by-week guide (effort, deload), days (add, remove, reorder,
+  rename, focus, body region, warm-up, optional), blocks and supersets, exercises (sets, reps, tempo,
+  rest, type, effort, cue, each side, bodyweight), warm-ups, weekly cardio target, **weekly extras**
+  (Pilates, yoga, CrossFit, classes…) and your coaching notes. **Save as new plan** duplicates it.
+- **+ New** starts a blank plan (hidden from clients until you tap **Publish**).
+- **Customize** (on a client) creates that client's own copy of their current plan and opens it in
+  the editor. Only they see it; their app switches to it on the next sync and keeps their start date,
+  logged numbers and PRs (history follows the exercise, so keep exercise names/ids for swaps you want
+  to count as "the same lift").
+
 ### Privacy
 Every table has row-level security: clients can only read and write their own data; the coach can
 read (not edit) data of clients on their roster; nobody else can read anything. The publishable key
@@ -225,6 +237,7 @@ app.js                all screens, forms, and logic
 food-lookup.js        food search, Open Food Facts, barcode scanning
 health.js             parses the Apple Health Shortcut's summary
 cloud.js              sign-in, sync, coach dashboard, invites, messages, targets
+editor.js             plan editor (templates and client versions)
 config.js             Supabase URL + publishable key
 vendor/supabase.js    Supabase client library (v2.117.3), bundled for offline use
 supabase/schema.sql   database tables + row-level security (run once in Supabase)
