@@ -316,7 +316,7 @@
   const r4 = (n) => Math.round(n * 4) / 4;
   function libraryItems() {
     const mine = (S().savedMeals || []).map((x) => ({ id: x.id, src: 'mine', name: x.name, tags: x.tags || [], per: x.per, items: x.items, servings: 1 }));
-    const coach = ((window.Cloud && Cloud.recipes && Cloud.recipes()) || []).map((r) => ({ id: r.id, src: 'coach', name: r.data.name, tags: r.data.tags || [], per: r.data.per, recipe: r.data }));
+    const coach = ((window.Cloud && Cloud.recipes && Cloud.recipes()) || []).map((r) => ({ id: r.id, src: 'coach', name: r.data.name, tags: r.data.tags || [], per: r.data.per, recipe: r.data, published: r.published !== false }));
     return [...mine, ...coach].filter((x) => x.per && x.per.kcal != null);
   }
   // Scale to the meal's protein; dishes with little protein scale by calories instead. Kept to ½–2½ servings.
@@ -339,7 +339,8 @@
     C.openModal(`<h2>${browse ? 'Recipes & saved meals' : `Choose a meal · ${esc(m.label)}`}</h2>
       ${browse ? '<p class="hint" style="margin-top:0">Tap one to see it, pick the servings and log it.</p>' : `<div class="meal-target" style="margin-top:0">Target: ${m.p} g P · ${m.c} g C · ${m.f} g F · ${m.kcal} kcal</div>`}
       <input type="search" id="lib-q" placeholder="Search meals and recipes" autocomplete="off" style="margin:10px 0">
-      <div class="segmented" id="lib-tabs" style="margin-bottom:8px"><button class="active" data-t="all">All</button><button data-t="mine">My meals</button><button data-t="coach">Coach recipes</button></div>
+      ${isCoach() ? '<button class="btn primary block" data-modal-action="lib-new" style="margin-bottom:8px">+ New recipe</button>' : ''}
+      <div class="segmented" id="lib-tabs" style="margin-bottom:8px"><button class="active" data-t="all">All</button><button data-t="mine">My meals</button><button data-t="coach">${isCoach() ? 'Library' : 'Coach recipes'}</button></div>
       <div id="lib-list"></div>`, null, { hideSave: true });
     const draw = () => {
       const want = ROLE_TAGS[m.role] || [];
@@ -352,7 +353,7 @@
       }).sort((a, b) => (browse ? a.name.localeCompare(b.name) : a.score - b.score));
       const box = document.getElementById('lib-list'); if (!box) return;
       box.innerHTML = items.length ? `<ul class="list lib">${items.map((x) => `<li><button data-modal-action="lib-open" data-id="${esc(x.id)}" data-src="${x.src}" data-key="${key}">
-          <div class="title">${esc(x.name)} ${x.src === 'coach' ? '<span class="chip">Coach</span>' : '<span class="chip">Mine</span>'}</div>
+          <div class="title">${esc(x.name)} ${x.src === 'coach' ? (x.published ? '<span class="chip">Coach</span>' : '<span class="chip" style="color:var(--warn)">Hidden</span>') : '<span class="chip">Mine</span>'}</div>
           <div class="meta">${browse ? `${x.per.kcal} kcal · P ${x.per.p} C ${x.per.c} F ${x.per.f} per serving${x.tags.length ? ' · ' + esc(x.tags.slice(0, 3).join(', ')) : ''}` : `${x.src === 'coach' ? `${fmtQ(x.s)} serving${x.s > 1 ? 's' : ''} · ` : ''}${x.v.kcal} kcal · ${fitText(x.v, m)}`}</div></button></li>`).join('')}</ul>`
         : `<div class="empty">${tab === 'mine' || !libraryItems().length ? 'No saved meals yet. Log a meal, then tap ⭐ Save as meal.' : 'Nothing matches.'}${tab === 'coach' ? ' Your coach hasn\'t added recipes yet.' : ''}</div>`;
     };
@@ -361,6 +362,7 @@
     draw();
   }
   const fmtQ = (q) => fmtQty(q) || '0';
+  const isCoach = () => !!(window.Cloud && Cloud.profile && Cloud.profile.role === 'coach');
 
   function openLibItem(id, src, key) {
     const nm = C.ui.nutMeals; const m = nm && nm.meals.find((x) => x.key === key); if (!m) return;
@@ -381,7 +383,12 @@
         ${r && r.source ? `<p class="sub" style="font-size:12px">${esc(r.source)}</p>` : ''}
         ${m.kcal ? '' : C.field('Log to', `<select id="lib-meal">${(C.mealOptions ? C.mealOptions(nm.date) : ['Breakfast', 'Lunch', 'Dinner', 'Snack']).map((x) => `<option ${x === m.label ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>`)}
         <button class="btn primary block" data-modal-action="lib-log" style="margin-top:8px">${m.kcal ? `Log to ${esc(m.label)}` : 'Log it'}</button>
-        ${src === 'mine' ? '<button class="btn danger small" data-modal-action="lib-del" style="margin-top:10px">Delete saved meal</button>' : ''}`, null, { hideSave: true });
+        ${src === 'mine' ? '<button class="btn danger small" data-modal-action="lib-del" style="margin-top:10px">Delete saved meal</button>' : ''}
+        ${src === 'coach' && isCoach() ? `<div class="coach-tools"><div class="res-head">Coach</div>
+          ${it.published ? '' : '<p class="sub" style="margin:0 0 8px"><strong>Hidden:</strong> clients can\'t see this recipe.</p>'}
+          <div class="row"><button class="btn small" data-modal-action="lib-edit">✏️ Edit</button>
+          <button class="btn small" data-modal-action="lib-pub">${it.published ? 'Hide from clients' : 'Show to clients'}</button>
+          <button class="btn small danger" data-modal-action="lib-rdel">Delete</button></div></div>` : ''}`, null, { hideSave: true });
       const upd = () => { const v = scaled(it.per, s); document.getElementById('lib-s').textContent = src === 'coach' ? fmtQ(s) : `${fmtQ(s)}×`; document.getElementById('lib-fit').innerHTML = m.kcal ? `<strong>${v.kcal} kcal</strong> · ${fitText(v, m)}` : `<strong>${v.kcal} kcal</strong> · P ${v.p} · C ${v.c} · F ${v.f}`; };
       upd();
       C.modalActions['lib-s'] = (b) => { s = Math.min(6, Math.max(0.25, s + Number(b.dataset.d))); upd(); };
@@ -396,6 +403,21 @@
           st.food.push({ id: C.uid(), date: nm.date, time, meal: mealLabel, name: it.name, serving: `${fmtQ(s)} serving${s > 1 ? 's' : ''}`, kcal: v.kcal, protein: v.p, carbs: v.c, fat: v.f, recipeId: it.id });
         }
         C.save(); C.closeModal(); C.toast(`${it.name} logged to ${mealLabel}`); C.render();
+      };
+      C.modalActions['lib-edit'] = async () => {
+        const row = (await Cloud.loadRecipes(true)).find((x) => x.id === it.id); if (!row) return;
+        C.ui.recipeReturn = true; C.closeModal(); setTimeout(() => Recipes.open(row), 0);
+      };
+      C.modalActions['lib-pub'] = async () => {
+        const row = (await Cloud.loadRecipes(true)).find((x) => x.id === it.id); if (!row) return;
+        try { await Cloud.saveRecipe({ id: row.id, data: row.data, published: !it.published }); await Cloud.loadRecipes(true); }
+        catch (e) { C.toast(e.message); return; }
+        C.toast(it.published ? 'Hidden from clients' : 'Visible to clients'); C.closeModal(); setTimeout(() => C.actions['nut-browse'](), 0);
+      };
+      C.modalActions['lib-rdel'] = async () => {
+        if (!confirm(`Delete "${it.name}" from your recipe library? Clients won't see it any more.`)) return;
+        try { await Cloud.deleteRecipe(it.id); await Cloud.loadRecipes(true); } catch (e) { C.toast(e.message); return; }
+        C.toast('Recipe deleted'); C.closeModal(); setTimeout(() => C.actions['nut-browse'](), 0);
       };
       C.modalActions['lib-del'] = () => {
         if (!confirm(`Delete "${it.name}" from your meals?`)) return;
@@ -438,6 +460,7 @@
     init(ctx) {
       C = ctx; Object.assign(ctx.actions, actions);
       ctx.modalActions['lib-open'] = (b) => openLibItem(b.dataset.id, b.dataset.src, b.dataset.key);
+      ctx.modalActions['lib-new'] = () => { C.ui.recipeReturn = true; C.closeModal(); setTimeout(() => Recipes.open(null), 0); };
       document.addEventListener('change', onChange);
     },
     active, dayInfo, targetsFor, foodCard, slotsFor, setupForm,

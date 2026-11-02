@@ -27,7 +27,8 @@
   // ---------- dashboard section ----------
   function section(rows) {
     rows = rows || [];
-    let h = `<div class="card"><div class="card-head"><h2>Recipe library · ${rows.length}</h2><span class="row" style="gap:6px"><button class="btn small primary" data-action="rcp-new">+ New</button><button class="btn small" data-action="rcp-upload">Upload</button></span></div>`;
+    let h = `<div class="card"><div class="card-head"><h2>Recipe library · ${rows.length}</h2><span class="row" style="gap:6px"><button class="btn small primary" data-action="rcp-new">+ New</button><button class="btn small" data-action="rcp-upload">Upload</button></span></div>
+      <button class="btn block" data-action="nut-browse" style="margin-bottom:10px">📖 Open recipe browser (what clients see)</button>`;
     h += rows.length ? `<ul class="list">${rows.map((r) => {
       const p = r.data.per || perServing(r.data);
       return `<li><div class="grow"><div class="title">${esc(r.data.name)}${r.published ? '' : ' <span class="chip">hidden</span>'}</div>
@@ -37,6 +38,12 @@
     return h + '</div>';
   }
 
+  // When the editor was opened from the recipe browser, go back there afterwards
+  function backToBrowser() {
+    if (!C.ui.recipeReturn) return;
+    C.ui.recipeReturn = false;
+    setTimeout(() => { if (C.actions['nut-browse']) C.actions['nut-browse'](); }, 50);
+  }
   // ---------- editor ----------
   function editor(row) {
     const isNew = !row;
@@ -48,7 +55,11 @@
       if (!draft.ingredients.length && !draft.per) { C.toast('Add at least one ingredient'); return false; }
       draft.per = perServing(draft);
       draft.name = draft.name.trim();
-      try { await Cloud.saveRecipe({ id: isNew ? `${slug(draft.name)}-${rid()}` : id, data: draft, published }); C.toast('Recipe saved'); Cloud.refreshCoach(); }
+      try {
+        await Cloud.saveRecipe({ id: isNew ? `${slug(draft.name)}-${rid()}` : id, data: draft, published });
+        await Cloud.loadRecipes(true);
+        C.toast('Recipe saved'); Cloud.refreshCoach(); backToBrowser();
+      }
       catch (e) { C.toast('Save failed: ' + e.message); return false; }
     }, { saveLabel: 'Save recipe' });
     const box = document.getElementById('rcp');
@@ -111,7 +122,7 @@
     };
     C.modalActions['rcp-delete'] = async () => {
       if (!confirm(`Delete "${draft.name}"?`)) return;
-      try { await Cloud.deleteRecipe(id); C.closeModal(); C.toast('Recipe deleted'); Cloud.refreshCoach(); } catch (e) { C.toast(e.message); }
+      try { await Cloud.deleteRecipe(id); await Cloud.loadRecipes(true); C.closeModal(); C.toast('Recipe deleted'); Cloud.refreshCoach(); backToBrowser(); } catch (e) { C.toast(e.message); }
     };
     draw();
   }
@@ -153,6 +164,6 @@
         'rcp-upload': upload,
       });
     },
-    section, perServing,
+    section, perServing, open: (row) => editor(row || null),
   };
 })();

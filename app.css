@@ -386,3 +386,6 @@ a.btn { text-decoration: none; }
 .lib .meta .good { color: var(--good); font-weight: 700; }
 #rcp .list li { gap: 8px; }
 #rcp .g-input { width: 76px !important; flex: none; min-height: 38px; padding: 6px 8px; text-align: right; }
+
+.coach-tools { margin-top: 14px; padding-top: 4px; border-top: 1px dashed var(--line); }
+.coach-tools .row .btn { flex: none; }
