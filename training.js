@@ -8,11 +8,22 @@
   const loading = new Map();
 
   // ---------- plan loading ----------
+  const staticIndex = () => fetch('plans/index.json').then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then((d) => d.plans || []);
+  const metaOf = (d) => ({ id: d.id, name: d.name, phase: d.phase, subtitle: d.subtitle, coach: d.coach, weeks: d.weeks, daysPerWeek: d.daysPerWeek, tags: d.tags, summary: d.summary, cloud: true });
+  // Signed in with a coach (or as the coach): plans come from the coach's online library.
+  // Otherwise the plans bundled with the app.
   function loadIndex() {
     if (planIndex) return Promise.resolve(planIndex);
     if (!indexPromise) {
-      indexPromise = fetch('plans/index.json').then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-        .then((d) => (planIndex = d.plans || []))
+      const cloud = window.Cloud && Cloud.usesCloudPlans();
+      indexPromise = (cloud ? Cloud.fetchPlans().then(async (rows) => {
+        const isCoach = Cloud.profile && Cloud.profile.role === 'coach';
+        const vis = rows.filter((r) => isCoach || r.published);
+        vis.forEach((r) => planCache.set(r.id, r.data));
+        if (!vis.length && isCoach) return staticIndex(); // coach hasn't added plans yet
+        return vis.map((r) => metaOf(r.data));
+      }) : staticIndex())
+        .then((list) => (planIndex = list))
         .catch((e) => { indexPromise = null; throw e; });
     }
     return indexPromise;
@@ -21,9 +32,11 @@
     if (planCache.has(id)) return Promise.resolve(planCache.get(id));
     if (loading.has(id)) return loading.get(id);
     const p = loadIndex().then((idx) => {
+      if (planCache.has(id)) return planCache.get(id);
       const meta = idx.find((x) => x.id === id);
-      if (!meta) throw new Error('Plan not found');
-      return fetch('plans/' + meta.file).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+      if (meta && meta.file) return fetch('plans/' + meta.file).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+      // not in this list (e.g. coach hid it): fall back to the bundled copy if there is one
+      return staticIndex().then((si) => { const m = si.find((x) => x.id === id); if (!m) throw new Error('Plan not found'); return fetch('plans/' + m.file).then((r) => r.json()); });
     }).then((plan) => { planCache.set(id, plan); loading.delete(id); return plan; })
       .catch((e) => { loading.delete(id); throw e; });
     loading.set(id, p);
@@ -48,7 +61,8 @@
     const cw = ((Math.max(week, 1) - 1) % cycle) + 1;
     const guide = (plan.weekGuide || []).find((g) => g.weeks.includes(cw)) || null;
     const weekStart = C.addDays(prog.startDate, (Math.max(week, 1) - 1) * 7);
-    return { week, cycleWeek: cw, guide, weekStart, weekEnd: C.addDays(weekStart, 6), before: days < 0, done: week > (plan.weeks || 999) };
+    const block = Math.floor((Math.max(week, 1) - 1) / cycle) + 1;
+    return { week, cycleWeek: cw, block, blocks: Math.ceil((plan.weeks || cycle) / cycle), guide, weekStart, weekEnd: C.addDays(weekStart, 6), before: days < 0, done: week > (plan.weeks || 999) };
   }
   const repRange = (reps) => { const m = String(reps).match(/\d+/g); return m ? { min: +m[0], max: +(m[1] || m[0]) } : null; };
   const restSeconds = (rest) => {
@@ -61,17 +75,26 @@
   const unit = () => S().settings.units;
 
   // Last logged sets for an exercise (by plan exercise id, falling back to name)
-  function lastSets(ex, beforeDate) {
-    const list = S().workouts.filter((w) => w.sets && w.date <= (beforeDate || '9999') && w.sets.some((s) => s.exId === ex.id || exKey(s.name) === exKey(ex.name)))
+  function lastSets(ex, beforeDate, skipDeload) {
+    const list = S().workouts.filter((w) => w.sets && w.date <= (beforeDate || '9999') && !(skipDeload && w.deload) && w.sets.some((s) => s.exId === ex.id || exKey(s.name) === exKey(ex.name)))
       .sort((a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || '')));
     if (!list.length) return null;
     const w = list[0];
     return { date: w.date, sets: w.sets.filter((s) => s.exId === ex.id || exKey(s.name) === exKey(ex.name)).sort((a, b) => a.set - b.set) };
   }
 
+  // Load jump when progressing: lower body +10 lb / +5 kg, upper body +5 lb / +2.5 kg
+  const bumpFor = (ex) => {
+    const lower = (ex.region || '') === 'lower' || (!ex.region && /squat|deadlift|rdl|thrust|leg press|lunge|split|step-up|hip|glute|hamstring|calf/i.test(ex.name));
+    return unit() === 'kg' ? (lower ? 5 : 2.5) : (lower ? 10 : 5);
+  };
   // Double-progression coaching hint
   function hint(ex, last, wk) {
     const u = unit();
+    if (wk && wk.newBlock && last && last.sets.length && !ex.bodyweight && ex.role !== 'core') {
+      const top = Math.max(...last.sets.map((s) => s.weight || 0));
+      if (top) return `New block 💪 Start heavier than block 1: try ${top + bumpFor(ex)} ${u} (your best before the deload was ${top}).`;
+    }
     if (wk && wk.guide && wk.guide.deload) {
       const top = last && Math.max(...last.sets.map((s) => s.weight || 0));
       return top ? `Deload week: about ${Math.round(top * 0.85 / 2.5) * 2.5} ${u} (−15%), finish every set with 3+ reps in reserve.` : 'Deload week: lighter loads, 3+ reps in reserve.';
@@ -86,7 +109,7 @@
     const top = Math.max(...weights);
     const sameWeight = weights.every((x) => x === top);
     if (rr && sameWeight && last.sets.length >= ex.sets && last.sets.every((s) => (s.reps || 0) >= rr.max)) {
-      const bump = /squat|deadlift|rdl|thrust|leg press|lunge|split/i.test(ex.name) ? (u === 'kg' ? 5 : 10) : (u === 'kg' ? 2.5 : 5);
+      const bump = bumpFor(ex);
       return `✅ All sets hit ${rr.max} last time. Add weight: try ${top + bump} ${u} and restart at ${rr.min} reps.`;
     }
     if (rr) return `Stay at ${top} ${u}. Goal: more reps until every set reaches ${rr.max}.`;
@@ -129,7 +152,7 @@
     h += `<div class="card"><div class="card-head"><h2>Your program</h2><button class="btn small" data-action="plan-guide" data-id="${esc(plan.id)}">Guide</button></div>
       <div style="font-weight:800;font-size:18px;line-height:1.2">${esc(plan.name)}</div><div class="sub">${esc(plan.phase || '')}</div>
       ${wk.before ? `<p class="sub">Starts ${C.prettyDate(prog.startDate)}.</p>` : wk.done ? `<p><strong>Program complete 🎉</strong> <span class="sub">Talk to your coach about the next phase.</span></p>` : `
-      <div class="week-pill">Week ${wk.week} of ${plan.weeks}${wk.guide ? ` · ${esc(wk.guide.label)}` : ''}</div>
+      <div class="week-pill">Week ${wk.week} of ${plan.weeks}${wk.blocks > 1 ? ` · Block ${wk.block}` : ''}${wk.guide ? ` · ${esc(wk.guide.label)}` : ''}</div>
       ${wk.guide ? `<p class="sub" style="margin:6px 0 0"><strong>${esc(wk.guide.effort)}</strong>. ${esc(wk.guide.note || '')}</p>` : ''}`}
       <div class="days">${plan.days.map((d) => `<button class="day ${doneIds.has(d.id) ? 'done' : ''} ${nd && nd.id === d.id ? 'next' : ''}" data-action="session-start" data-day="${d.id}">
         <span class="day-label">${esc(d.label)}${d.optional ? ' · optional' : ''}</span><span class="day-name">${esc(d.name)}</span><span class="day-state">${doneIds.has(d.id) ? '✓ Done' : nd && nd.id === d.id ? 'Up next' : ''}</span></button>`).join('')}</div>
@@ -165,6 +188,7 @@
     if (!planIndex) { loadIndex().then(() => C.render()).catch((e) => C.toast('Couldn\'t load plans: ' + e.message)); return '<div class="empty">Loading plans…</div>'; }
     const cur = S().program;
     let h = '<p class="sub" style="margin-top:0">Choose the program you want to run. You can switch later; your history stays.</p>';
+    if (!planIndex.length) h += '<div class="card"><div class="empty">Your coach hasn\'t made any plans available to you yet.</div></div>';
     h += planIndex.map((p) => `<div class="card"><div style="font-weight:800;font-size:18px">${esc(p.name)}</div><div class="sub">${esc(p.phase || '')}</div>
       <p class="sub" style="margin:8px 0">${esc(p.summary || '')}</p>
       <div style="margin-bottom:10px">${[`${p.weeks} weeks`, p.daysPerWeek ? p.daysPerWeek + ' days/week' : '', ...(p.tags || [])].filter(Boolean).map((t) => `<span class="chip">${esc(t)}</span>`).join('')}</div>
@@ -193,7 +217,8 @@
       ${plan.coach ? `<div class="sub" style="margin-top:4px">Coach: ${esc(plan.coach)}</div>` : ''}<p>${esc(plan.summary || '')}</p>
       ${cur && cur.planId === plan.id ? '' : `<button class="btn primary block" data-action="plan-choose" data-id="${esc(plan.id)}">Start this plan</button>`}</div>`;
     if (plan.weekGuide) h += `<div class="card"><div class="card-head"><h2>Week by week</h2></div><table class="tbl"><tbody>${plan.weekGuide.map((g) => `<tr><td style="white-space:nowrap"><strong>Wk ${g.weeks.length > 1 ? g.weeks[0] + '–' + g.weeks[g.weeks.length - 1] : g.weeks[0]}</strong></td><td><strong>${esc(g.label)}</strong><br><span class="sub">${esc(g.effort)}</span></td></tr>`).join('')}</tbody></table>
-      ${plan.cycleWeeks && plan.weeks > plan.cycleWeeks ? `<p class="sub">The ${plan.cycleWeeks}-week block repeats through week ${plan.weeks}.</p>` : ''}</div>`;
+      ${plan.blocksNote ? `<p class="sub">${esc(plan.blocksNote)}</p>` : plan.cycleWeeks && plan.weeks > plan.cycleWeeks ? `<p class="sub">The ${plan.cycleWeeks}-week block repeats through week ${plan.weeks}.</p>` : ''}
+      ${plan.progression && plan.progression.loadJumps ? `<p class="sub">Load jumps: lower body ${esc(plan.progression.loadJumps.lower)}, upper body ${esc(plan.progression.loadJumps.upper)}.</p>` : ''}</div>`;
     h += plan.days.map((d) => `<div class="card"><div class="card-head"><h2>${esc(d.label)}${d.optional ? ' · optional' : ''}</h2></div><div style="font-weight:800;font-size:18px">${esc(d.name)}</div>
       ${d.focus ? `<p class="sub"><em>${esc(d.focus)}</em></p>` : ''}
       ${d.warmup && plan.warmups && plan.warmups[d.warmup] ? `<p class="sub">Starts with the ${esc(plan.warmups[d.warmup].name)}.</p>` : ''}
@@ -216,7 +241,7 @@
     const day = plan.days.find((d) => d.id === dayId);
     const wk = programWeek(prog, plan);
     st.activeSession = { id: C.uid(), planId: plan.id, dayId, dayLabel: day.label, dayName: day.name, week: wk.week, date: C.todayISO(),
-      startedAt: Date.now(), sets: {}, extraSets: {}, primer: {}, extra: [], notes: '' };
+      startedAt: Date.now(), sets: {}, extraSets: {}, primer: {}, extra: [], notes: '', deload: !!(wk.guide && wk.guide.deload) };
     C.save();
     openSession();
   }
@@ -241,8 +266,12 @@
   }
 
   function exerciseCard(ex, as, wk, letter) {
-    const last = lastSets(ex, as.date);
-    const hn = hint(ex, last, wk);
+    const deloadNow = wk.guide && wk.guide.deload;
+    const last = lastSets(ex, as.date, !deloadNow) || lastSets(ex, as.date);
+    // first time this exercise is trained in a new block → suggest a heavier start
+    const blockStart = C.addDays(wk.weekStart, -7 * (wk.cycleWeek - 1));
+    const wk2 = Object.assign({}, wk, { newBlock: wk.block > 1 && !deloadNow && !!last && last.date < blockStart });
+    const hn = hint(ex, last, wk2);
     const lastTxt = last ? last.sets.map((s) => (s.weight ? `${s.weight}×${s.reps ?? '–'}` : `${s.reps ?? '–'}`)).join(', ') : '';
     return `<div class="ex-card" id="ex-${ex.id}"><div class="ex-title">${letter ? `<span class="ex-letter">${letter}</span>` : ''}${esc(ex.name)}</div>
       <div class="ex-chips"><span class="chip strong">${prescription(ex)}</span>${ex.tempo ? `<span class="chip">Tempo ${esc(ex.tempo)}</span>` : ''}${ex.rest ? `<span class="chip">Rest ${esc(ex.rest)}</span>` : ''}${ex.effort ? `<span class="chip">${esc(ex.effort)}</span>` : ''}
@@ -253,6 +282,7 @@
       ${setRows(ex, as, last)}</div>`;
   }
 
+  const withRegion = (ex, day) => (ex.region || !day.region ? ex : Object.assign({}, ex, { region: day.region }));
   function viewSession() {
     const st = S(), as = st.activeSession;
     if (!as) return '<div class="card"><div class="empty">No workout in progress.</div><button class="btn block" data-action="goto" data-tab="train">Back to Training</button></div>';
@@ -275,9 +305,9 @@
     day.blocks.forEach((b) => {
       if (b.type === 'superset') {
         h += `<div class="card block-card"><div class="card-head" style="margin-bottom:4px"><h2>${esc(b.name || 'Superset')}</h2></div>${b.note ? `<p class="sub" style="margin-top:0">${esc(b.note)}</p>` : ''}
-          ${b.exercises.map((ex, i) => exerciseCard(ex, as, wk, String.fromCharCode(65 + i))).join('')}</div>`;
+          ${b.exercises.map((ex, i) => exerciseCard(withRegion(ex, day), as, wk, String.fromCharCode(65 + i))).join('')}</div>`;
       } else {
-        h += `<div class="card block-card">${b.name ? `<div class="card-head" style="margin-bottom:4px"><h2>${esc(b.name)}</h2></div>` : ''}${b.exercises.map((ex) => exerciseCard(ex, as, wk)).join('')}</div>`;
+        h += `<div class="card block-card">${b.name ? `<div class="card-head" style="margin-bottom:4px"><h2>${esc(b.name)}</h2></div>` : ''}${b.exercises.map((ex) => exerciseCard(withRegion(ex, day), as, wk)).join('')}</div>`;
       }
     });
     if (day.freeform || as.extra.length) {
@@ -318,7 +348,7 @@
     const minutes = Math.max(1, Math.min(240, Math.round((Date.now() - as.startedAt) / 60000)));
     const before = C.liftBests();
     const rec = { id: C.uid(), date: as.date, time: new Date(as.startedAt).toTimeString().slice(0, 5), type: `${as.dayLabel} · ${as.dayName}`, minutes,
-      planId: as.planId, dayId: as.dayId, week: as.week, sets, notes: as.notes.trim(), exercises: '', intensity: null };
+      planId: as.planId, dayId: as.dayId, week: as.week, deload: !!as.deload, sets, notes: as.notes.trim(), exercises: '', intensity: null };
     st.workouts.push(rec);
     st.activeSession = null;
     stopTimer();
@@ -511,6 +541,7 @@
     },
     afterRender(tab) { if (tab === 'session') sessionClock(); },
     preload() { const p = S().program; if (p) loadPlan(p.planId).then(() => C.render()).catch(() => {}); },
+    resetPlans() { planIndex = null; indexPromise = null; planCache.clear(); const p = S().program; if (p) loadPlan(p.planId).then(() => C.softRender ? C.softRender() : C.render()).catch(() => {}); },
     trainCard, todayCard, summary, isCardio,
   };
 })();

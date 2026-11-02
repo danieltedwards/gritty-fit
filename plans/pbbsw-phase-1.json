@@ -23,7 +23,7 @@
    ],
    "label": "Movement quality",
    "effort": "Main lifts 2–3 RIR",
-   "note": "Learn each movement, slow every rep, choose weights that allow perfect execution. Don't chase heavy numbers yet."
+   "note": "Learn each movement, slow every rep, choose weights that allow perfect execution. Don't chase heavy numbers yet. (Block 2: start heavier than block 1.)"
   },
   {
    "weeks": [
@@ -57,6 +57,10 @@
   "isolation": {
    "type": "double",
    "text": "3–4 sets × 12–20. Final sets may approach technical failure with good form."
+  },
+  "loadJumps": {
+   "lower": "+10 lb",
+   "upper": "+5 lb"
   }
  },
  "warmups": {
@@ -189,7 +193,8 @@
       }
      ]
     }
-   ]
+   ],
+   "region": "lower"
   },
   {
    "id": "d2",
@@ -272,7 +277,8 @@
       }
      ]
     }
-   ]
+   ],
+   "region": "upper"
   },
   {
    "id": "d3",
@@ -366,7 +372,8 @@
       }
      ]
     }
-   ]
+   ],
+   "region": "lower"
   },
   {
    "id": "d4",
@@ -445,7 +452,8 @@
       }
      ]
     }
-   ]
+   ],
+   "region": "lower"
   },
   {
    "id": "d5",
@@ -462,7 +470,8 @@
     "Core",
     "20–30 min cardio"
    ],
-   "blocks": []
+   "blocks": [],
+   "region": "upper"
   }
  ],
  "sections": [
@@ -686,5 +695,6 @@
     }
    ]
   }
- ]
+ ],
+ "blocksNote": "Two 6-week blocks. Block 2 (weeks 7–12) repeats the same structure with heavier loads: start each lift above your best block-1 weight."
 }

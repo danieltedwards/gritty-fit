@@ -1,6 +1,6 @@
 {
-  "name": "Gritty Fit",
-  "short_name": "Gritty Fit",
+  "name": "GRIT",
+  "short_name": "GRIT",
   "description": "Personal fitness tracker: calories, workouts, habits, journal, weigh-ins and progress photos.",
   "start_url": "./",
   "scope": "./",

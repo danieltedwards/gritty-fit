@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Gritty Fit</title>
+  <title>GRIT</title>
   <meta name="description" content="Personal fitness tracker: calories, workouts, habits, journal, weigh-ins, body composition and progress photos.">
   <meta name="theme-color" content="#111418">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Gritty Fit">
+  <meta name="apple-mobile-web-app-title" content="GRIT">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon-180.png">
@@ -43,11 +43,14 @@
   <div id="toast" role="status" aria-live="polite"></div>
   <div id="rest-timer" role="timer" aria-live="polite"></div>
 
+  <script src="config.js"></script>
+  <script src="vendor/supabase.js"></script>
   <script src="db.js"></script>
   <script src="charts.js"></script>
   <script src="food-lookup.js"></script>
   <script src="health.js"></script>
   <script src="training.js"></script>
+  <script src="cloud.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

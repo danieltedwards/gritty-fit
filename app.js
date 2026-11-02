@@ -1,4 +1,4 @@
-/* Gritty Fit — single-user, on-device fitness tracker. No accounts, no server. */
+/* GRIT — coaching & fitness tracker. Local-first; optional sync via cloud.js. */
 (function () {
   'use strict';
 
@@ -27,10 +27,11 @@
     settings: { name: '', units: 'lb', calorieTarget: 2200, proteinTarget: 150, workoutsPerWeek: 4, goalWeight: null, startWeight: null, sex: null, age: null, heightCm: null, lastBackup: null },
     food: [], workouts: [], body: [], journal: [], goals: [],
     habits: [
-      { id: uid(), name: 'Hit my calorie target', active: true },
-      { id: uid(), name: 'Drink 100 oz water', active: true },
-      { id: uid(), name: '10,000 steps', active: true },
-      { id: uid(), name: '7+ hours sleep', active: true },
+      // fixed ids so a fresh device doesn't create duplicates when it syncs
+      { id: 'h-calories', name: 'Hit my calorie target', active: true },
+      { id: 'h-water', name: 'Drink 100 oz water', active: true },
+      { id: 'h-steps', name: '10,000 steps', active: true },
+      { id: 'h-sleep', name: '7+ hours sleep', active: true },
     ],
     habitLog: {},
     health: {},
@@ -40,9 +41,13 @@
   let S = null;
   let saveTimer = null;
   function save() {
+    if (ui.viewAs) return; // coach viewing a client: read-only, never persisted
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => DB.setState(S).catch((e) => toast('Save failed: ' + e.message)), 150);
+    if (window.Cloud) Cloud.changed();
   }
+  // write immediately, without triggering a cloud push (used when applying synced changes)
+  const saveLocal = () => (ui.viewAs ? Promise.resolve() : DB.setState(S));
 
   const ui = { tab: 'today', foodDate: todayISO(), bodySeg: 'weigh', goalSeg: 'journal', reviewWeek: null, compare: [], photoUrls: new Map() };
 
@@ -218,7 +223,8 @@
     const hour = new Date().getHours();
     const greet = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
 
-    let h = `<p class="sub" style="margin:0 0 14px">${greet}${st.name ? ', ' + esc(st.name) : ''}. ${strk ? `<strong>${strk}-day</strong> logging streak — keep it alive.` : 'Log anything today to start a streak.'}</p>`;
+    let h = window.Cloud ? Cloud.todayCards() : '';
+    h += `<p class="sub" style="margin:0 0 14px">${greet}${st.name ? ', ' + esc(st.name) : ''}. ${strk ? `<strong>${strk}-day</strong> logging streak — keep it alive.` : 'Log anything today to start a streak.'}</p>`;
 
     h += `<div class="quick-row"><button class="btn primary" data-action="add-food">+ Food</button><button class="btn primary" data-action="add-workout">+ Workout</button><button class="btn primary" data-action="add-body">+ Weight</button></div>`;
     h += Training.todayCard();
@@ -835,13 +841,15 @@
       <div class="fields-2">${field('Daily calories', inNum('calorieTarget', st.calorieTarget, 'min="0" required'))}${field('Daily protein (g)', inNum('proteinTarget', st.proteinTarget, 'min="0"'))}</div>
       <p class="hint"><a href="#" data-modal-action="calc" style="color:var(--accent);font-weight:650">Calculate my targets</a> from height, age, weight and activity.</p>
       <div class="fields-2">${field('Workouts / week', inNum('workoutsPerWeek', st.workoutsPerWeek, 'min="0" max="14" step="1"'))}${field(`Goal weight (${st.units})`, inNum('goalWeight', st.goalWeight, 'min="0"'))}</div>
+      ${window.Cloud ? Cloud.settingsSection() : ''}
       <div class="sub" style="font-weight:700;margin:10px 0 8px">Apple Watch / Apple Health</div>
       <p class="hint">Bring in steps, active calories, sleep, resting heart rate, weight and watch workouts with a one-tap Shortcut. <a href="https://github.com/danieltedwards/gritty-fit#apple-watch--apple-health" target="_blank" rel="noopener" style="color:var(--accent);font-weight:650">Setup guide</a></p>
       <button class="btn block" data-modal-action="health-import" style="margin-bottom:12px">⌚ Import from Apple Health</button>
       <div class="sub" style="font-weight:700;margin:10px 0 8px">Your data</div>
-      <p class="hint">Everything is stored only in this browser on this device. Export a backup now and then — clearing browser data deletes it.</p>
+      <p class="hint">${window.Cloud && Cloud.user ? 'Your data is saved on this device and synced to your account.' : 'Everything is stored only in this browser on this device. Sign in to sync it, or export a backup now and then — clearing browser data deletes it.'}</p>
       <div class="row" style="margin-bottom:10px"><button class="btn" data-modal-action="export">Export backup</button><button class="btn" data-modal-action="import">Import backup</button></div>
       <button class="btn danger block" data-modal-action="wipe">Erase all data</button>`, (fd) => {
+      if (window.Cloud) Cloud.saveName(fd);
       const newUnits = fd.get('units');
       if (newUnits !== st.units) convertUnits(st.units, newUnits);
       Object.assign(st, {
@@ -881,7 +889,7 @@
     input.onchange = async () => {
       try {
         const data = JSON.parse(await input.files[0].text());
-        if (data.app !== 'gritty-fit' || !data.state) throw new Error('That is not a Gritty Fit backup');
+        if (data.app !== 'gritty-fit' || !data.state) throw new Error('That is not a GRIT backup');
         if (!confirm('Replace everything on this device with this backup?')) return;
         S = Object.assign(DEFAULT_STATE(), data.state);
         await DB.setState(S);
@@ -971,7 +979,7 @@
   // ---------- Apple Health import (via an Apple Shortcut that copies a text summary) ----------
   function healthImportForm(prefill = '') {
     openModal(`<h2>⌚ Import from Apple Health</h2>
-      <p class="hint" style="margin-top:0">Run your <strong>Gritty Fit Health</strong> Shortcut first, then tap Paste.</p>
+      <p class="hint" style="margin-top:0">Run your Apple Health Shortcut first, then tap Paste.</p>
       <button class="btn primary block" data-modal-action="health-paste">Paste from Shortcut</button>
       <details style="margin:10px 0"><summary class="sub" style="cursor:pointer">Paste didn't work? Paste it here instead</summary>
         <textarea id="health-text" placeholder="GRITTYFIT&#10;Steps: 8432&#10;…" style="margin-top:8px;min-height:90px">${esc(prefill)}</textarea></details>
@@ -1144,9 +1152,25 @@
     const el = e.target.closest('[data-action]');
     if (!el || el.closest('#modal')) return;
     e.preventDefault();
+    if (ui.viewAs && !VIEW_OK.has(el.dataset.action)) { toast(`Read-only: you're viewing ${ui.viewAs.name}`); return; }
     const fn = actions[el.dataset.action];
     if (fn) fn(el);
   });
+
+  // Actions allowed while a coach views a client's app (navigation only)
+  const VIEW_OK = new Set(['goto', 'food-day', 'body-seg', 'goal-seg', 'review-week', 'lift-chart', 'view-session', 'plan-guide', 'pick-photo', 'clear-compare', 'exit-view-as', 'timer-stop']);
+  function enterViewAs(state, name) {
+    ui.viewAs = { name, realS: S, realTab: ui.tab };
+    S = state;
+    ui.tab = 'today';
+    toast(`Viewing ${name} (read-only)`);
+    render(); window.scrollTo(0, 0);
+  }
+  actions['exit-view-as'] = () => {
+    const v = ui.viewAs; if (!v) return;
+    S = v.realS; ui.viewAs = null; ui.tab = 'coach';
+    render(); window.scrollTo(0, 0);
+  };
 
   // ---------- render ----------
   const TITLES = { today: 'Today', food: 'Food', train: 'Training', body: 'Body', journal: 'Goals & Journal' };
@@ -1165,7 +1189,8 @@
     document.querySelectorAll('.tabbar [data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === navTab));
     $('#back-btn').hidden = !PARENT[ui.tab];
     $('#back-btn').dataset.tab = PARENT[ui.tab] || '';
-    $('#view').innerHTML = views[ui.tab]();
+    $('#view').innerHTML = (ui.viewAs ? `<div class="viewas"><span>👀 Viewing <strong>${esc(ui.viewAs.name)}</strong> · read-only</span><button class="btn small" data-action="exit-view-as">Exit</button></div>` : '') + views[ui.tab]();
+    document.body.classList.toggle('viewing-as', !!ui.viewAs);
     Training.afterRender(ui.tab);
     if (ui.tab === 'body' && ui.bodySeg === 'photos') renderPhotos();
   }
@@ -1181,6 +1206,14 @@
     openModal, closeModal: () => modal.close(), field, inNum, setTab, liftBests, ui, views, actions, modalActions, TITLES, PARENT,
   });
 
+  // Re-render unless the person is mid-entry (open form or live workout), so syncs never steal focus
+  function softRender() { if (!modal.open && ui.tab !== 'session') render(); }
+  if (window.Cloud) Cloud.init({
+    getState: () => S, replaceState: async (st) => { S = st; await DB.setState(S); }, defaultState: DEFAULT_STATE,
+    save, saveLocal, render, softRender, toast, esc, todayISO, relDay, daysBetween, openModal, closeModal: () => modal.close(),
+    field, inNum, setTab, ui, views, actions, modalActions, TITLES, PARENT, enterViewAs,
+  });
+
   async function boot() {
     try {
       S = (await DB.getState()) || DEFAULT_STATE();
@@ -1193,8 +1226,10 @@
     try { const t = localStorage.getItem('gf-tab'); if (t && views[t]) ui.tab = t; } catch (_) { /* ignore */ }
     if (ui.tab === 'session' && !S.activeSession) ui.tab = 'train';
     if ((ui.tab === 'guide' && !ui.guidePlan) || ui.tab === 'plans') ui.tab = 'train';
+    if (ui.tab === 'coach') ui.tab = 'today';
     render();
     Training.preload();
+    if (window.Cloud) Cloud.start().catch((e) => console.warn('cloud', e));
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
     if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
   }

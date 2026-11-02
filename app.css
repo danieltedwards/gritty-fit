@@ -314,3 +314,13 @@ body.timing #toast { bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) + 8
 #rest-timer > span:first-child { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
 #rest-timer .rt-label { font-size: 12px; opacity: .75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #rest-timer > span:last-child { flex: none; display: flex; }
+
+/* ---------- accounts & coach ---------- */
+.viewas { position: sticky; top: calc(env(safe-area-inset-top) + 76px); z-index: 4; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin: 0 0 14px; padding: 10px 12px; border-radius: 14px; background: var(--violet); color: #fff; font-size: 14px; }
+.viewas .btn { background: rgb(255 255 255 / .2); color: #fff; border: 0; flex: none; }
+.client { padding: 12px 0; border-top: 1px solid var(--line); }
+.client:first-of-type { border-top: 0; padding-top: 0; }
+.client-actions { margin-top: 4px; gap: 6px; }
+.client-actions .btn { flex: none; }
+.invite-code { font-size: 34px; font-weight: 900; letter-spacing: .18em; text-align: center; padding: 14px; margin: 4px 0 8px; border-radius: 14px; background: var(--accent-soft); color: var(--accent); font-variant-numeric: tabular-nums; }

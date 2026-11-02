@@ -36,6 +36,8 @@
   window.DB = {
     getState: () => tx('kv', 'readonly', (s) => s.get('state')),
     setState: (state) => tx('kv', 'readwrite', (s) => s.put(state, 'state')),
+    getKV: (key) => tx('kv', 'readonly', (s) => s.get(key)),
+    setKV: (key, val) => tx('kv', 'readwrite', (s) => s.put(val, key)),
     putPhoto: (photo) => tx('photos', 'readwrite', (s) => s.put(photo)),
     getPhoto: (id) => tx('photos', 'readonly', (s) => s.get(id)),
     deletePhoto: (id) => tx('photos', 'readwrite', (s) => s.delete(id)),
