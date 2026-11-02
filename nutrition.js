@@ -240,7 +240,8 @@
     if (!active()) {
       return `<div class="card" style="border-color:var(--accent)"><div class="row" style="flex-wrap:nowrap"><div style="flex:1"><strong>Get your nutrition plan</strong>
         <div class="sub">Daily calories, protein, carbs and fat, and what to eat at each meal, based on your training.</div></div>
-        <button class="btn primary" data-action="nut-setup">Start</button></div></div>`;
+        <button class="btn primary" data-action="nut-setup">Start</button></div></div>
+        <button class="btn block" data-action="nut-browse" style="margin-bottom:14px">📖 Recipes & saved meals</button>`;
     }
     const d = dayInfo(dateIso), st = S(), p = d.p, t = d.targets;
     const sum = (k) => items.reduce((a, f) => a + (f[k] || 0), 0);
@@ -251,6 +252,7 @@
       ${d.type !== 'rest' ? `<div class="row" style="margin:8px 0 0;flex-wrap:nowrap"><span class="sub" style="flex:none">Training</span><select class="small-select" data-nut-after>${Array.from({ length: p.meals + 1 }, (_, i) => `<option value="${i}" ${d.after === i ? 'selected' : ''}>${i === 0 ? 'first thing' : 'after meal ' + i}</option>`).join('')}</select></div>` : ''}
       ${d.override ? `<button class="link-btn" data-action="nut-reset-day" style="font-size:13px">Reset to my usual ${DAYS[new Date(...dateIso.split('-').map((x, i) => (i === 1 ? x - 1 : +x))).getDay()]}</button>` : ''}
       <div style="margin-top:12px">${bar('Calories', got.kcal, t.kcal, '')}${bar('Protein', got.p, t.protein, ' g')}${bar('Carbs', got.c, t.carbs, ' g')}${bar('Fat', got.f, t.fat, ' g')}</div>
+      <button class="btn small block" data-action="nut-browse" style="margin-top:10px">📖 Browse recipes & saved meals</button>
       <p class="hint" style="margin:8px 0 0">${GOALS[p.goal]}${p.goal !== 'maintain' ? ' · ' + p.pace : ''}${st.nutrition.coach && (st.nutrition.coach.kcalAdjust || st.nutrition.coach.protein) ? ' · adjusted by your coach' : ''}${p.flagged ? ' · <strong>coach review</strong>' : ''}</p></div>`;
     const picksFor = (m, i) => {
       const prefs = p.prefs || DEFAULT_PREFS;
@@ -290,6 +292,15 @@
     'nut-type': (el) => { const st = S(); const n = st.nutrition; const iso = C.ui.foodDate; n.overrides = n.overrides || {}; n.overrides[iso] = { ...(n.overrides[iso] || {}), type: el.dataset.type }; C.save(); C.render(); },
     'nut-reset-day': () => { const n = S().nutrition; delete (n.overrides || {})[C.ui.foodDate]; C.save(); C.render(); },
     'nut-choose': (el) => chooseMeal(el.dataset.key),
+    'nut-browse': () => {
+      const iso = C.ui.foodDate || C.todayISO();
+      const opts = C.mealOptions ? C.mealOptions(iso) : ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
+      const hr = new Date().getHours();
+      const label = active() ? ((dayInfo(iso).meals.find((x) => !S().food.some((f) => f.date === iso && f.meal === x.label)) || { label: opts[0] }).label) : (hr < 11 ? 'Breakfast' : hr < 15 ? 'Lunch' : hr < 21 ? 'Dinner' : 'Snack');
+      const keep = C.ui.nutMeals && C.ui.nutMeals.date === iso ? C.ui.nutMeals.meals.filter((x) => x.key !== 'browse') : [];
+      C.ui.nutMeals = { date: iso, meals: [...keep, { key: 'browse', label, role: 'other', p: 0, c: 0, f: 0, kcal: 0 }], picks: [] };
+      chooseMeal('browse');
+    },
     'nut-save-meal': (el) => saveMeal(el.dataset.key),
     'nut-swap': (el) => { C.ui.nutSwap = C.ui.nutSwap || {}; C.ui.nutSwap[el.dataset.key] = (C.ui.nutSwap[el.dataset.key] || 0) + 1; C.render(); },
     'nut-log-meal': (el) => {
@@ -324,8 +335,9 @@
     const nm = C.ui.nutMeals; const m = nm && nm.meals.find((x) => x.key === key); if (!m) return;
     if (window.Cloud && Cloud.loadRecipes) Cloud.loadRecipes().then(() => { if (document.getElementById('lib-list')) draw(); }).catch(() => {});
     let tab = 'all', q = '';
-    C.openModal(`<h2>Choose a meal · ${esc(m.label)}</h2>
-      <div class="meal-target" style="margin-top:0">Target: ${m.p} g P · ${m.c} g C · ${m.f} g F · ${m.kcal} kcal</div>
+    const browse = !m.kcal;
+    C.openModal(`<h2>${browse ? 'Recipes & saved meals' : `Choose a meal · ${esc(m.label)}`}</h2>
+      ${browse ? '<p class="hint" style="margin-top:0">Tap one to see it, pick the servings and log it.</p>' : `<div class="meal-target" style="margin-top:0">Target: ${m.p} g P · ${m.c} g C · ${m.f} g F · ${m.kcal} kcal</div>`}
       <input type="search" id="lib-q" placeholder="Search meals and recipes" autocomplete="off" style="margin:10px 0">
       <div class="segmented" id="lib-tabs" style="margin-bottom:8px"><button class="active" data-t="all">All</button><button data-t="mine">My meals</button><button data-t="coach">Coach recipes</button></div>
       <div id="lib-list"></div>`, null, { hideSave: true });
@@ -337,11 +349,11 @@
         const s = suggestServings(x, m); const v = scaled(x.per, s);
         const stretch = Math.abs(Math.log2(s)) * 0.35; // prefer dishes that fit near one serving
         return { ...x, s, v, score: fitScore(v, m) + stretch - (x.tags.some((t) => want.includes(t)) ? 0.3 : 0) };
-      }).sort((a, b) => a.score - b.score);
+      }).sort((a, b) => (browse ? a.name.localeCompare(b.name) : a.score - b.score));
       const box = document.getElementById('lib-list'); if (!box) return;
       box.innerHTML = items.length ? `<ul class="list lib">${items.map((x) => `<li><button data-modal-action="lib-open" data-id="${esc(x.id)}" data-src="${x.src}" data-key="${key}">
           <div class="title">${esc(x.name)} ${x.src === 'coach' ? '<span class="chip">Coach</span>' : '<span class="chip">Mine</span>'}</div>
-          <div class="meta">${x.src === 'coach' ? `${fmtQ(x.s)} serving${x.s > 1 ? "s" : ""} · ` : ''}${x.v.kcal} kcal · ${fitText(x.v, m)}</div></button></li>`).join('')}</ul>`
+          <div class="meta">${browse ? `${x.per.kcal} kcal · P ${x.per.p} C ${x.per.c} F ${x.per.f} per serving${x.tags.length ? ' · ' + esc(x.tags.slice(0, 3).join(', ')) : ''}` : `${x.src === 'coach' ? `${fmtQ(x.s)} serving${x.s > 1 ? 's' : ''} · ` : ''}${x.v.kcal} kcal · ${fitText(x.v, m)}`}</div></button></li>`).join('')}</ul>`
         : `<div class="empty">${tab === 'mine' || !libraryItems().length ? 'No saved meals yet. Log a meal, then tap ⭐ Save as meal.' : 'Nothing matches.'}${tab === 'coach' ? ' Your coach hasn\'t added recipes yet.' : ''}</div>`;
     };
     document.getElementById('lib-q').addEventListener('input', (e) => { q = e.target.value.trim().toLowerCase(); draw(); });
@@ -367,21 +379,23 @@
         ${r && r.instructions ? `<div class="res-head">How to make it</div><p style="white-space:pre-wrap;margin-top:4px">${esc(r.instructions)}</p>` : ''}
         ${r && r.prepMin ? `<p class="sub">⏱ ${r.prepMin} min</p>` : ''}
         ${r && r.source ? `<p class="sub" style="font-size:12px">${esc(r.source)}</p>` : ''}
-        <button class="btn primary block" data-modal-action="lib-log" style="margin-top:8px">Log to ${esc(m.label)}</button>
+        ${m.kcal ? '' : C.field('Log to', `<select id="lib-meal">${(C.mealOptions ? C.mealOptions(nm.date) : ['Breakfast', 'Lunch', 'Dinner', 'Snack']).map((x) => `<option ${x === m.label ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>`)}
+        <button class="btn primary block" data-modal-action="lib-log" style="margin-top:8px">${m.kcal ? `Log to ${esc(m.label)}` : 'Log it'}</button>
         ${src === 'mine' ? '<button class="btn danger small" data-modal-action="lib-del" style="margin-top:10px">Delete saved meal</button>' : ''}`, null, { hideSave: true });
-      const upd = () => { const v = scaled(it.per, s); document.getElementById('lib-s').textContent = src === 'coach' ? fmtQ(s) : `${fmtQ(s)}×`; document.getElementById('lib-fit').innerHTML = `<strong>${v.kcal} kcal</strong> · ${fitText(v, m)}`; };
+      const upd = () => { const v = scaled(it.per, s); document.getElementById('lib-s').textContent = src === 'coach' ? fmtQ(s) : `${fmtQ(s)}×`; document.getElementById('lib-fit').innerHTML = m.kcal ? `<strong>${v.kcal} kcal</strong> · ${fitText(v, m)}` : `<strong>${v.kcal} kcal</strong> · P ${v.p} · C ${v.c} · F ${v.f}`; };
       upd();
       C.modalActions['lib-s'] = (b) => { s = Math.min(6, Math.max(0.25, s + Number(b.dataset.d))); upd(); };
       C.modalActions['lib-log'] = () => {
         const st = S(); const now = new Date(); const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        const sel = document.getElementById('lib-meal'); const mealLabel = sel ? sel.value : m.label;
         if (src === 'mine') {
-          it.items.forEach((x) => st.food.push({ id: C.uid(), date: nm.date, time, meal: m.label, name: x.name, serving: s === 1 ? x.serving : `${fmtQ(s)}× ${x.serving || 'serving'}`,
+          it.items.forEach((x) => st.food.push({ id: C.uid(), date: nm.date, time, meal: mealLabel, name: x.name, serving: s === 1 ? x.serving : `${fmtQ(s)}× ${x.serving || 'serving'}`,
             kcal: Math.round((x.kcal || 0) * s), protein: Math.round((x.protein || 0) * s), carbs: Math.round((x.carbs || 0) * s), fat: Math.round((x.fat || 0) * s) }));
         } else {
           const v = scaled(it.per, s);
-          st.food.push({ id: C.uid(), date: nm.date, time, meal: m.label, name: it.name, serving: `${fmtQ(s)} serving${s > 1 ? 's' : ''}`, kcal: v.kcal, protein: v.p, carbs: v.c, fat: v.f, recipeId: it.id });
+          st.food.push({ id: C.uid(), date: nm.date, time, meal: mealLabel, name: it.name, serving: `${fmtQ(s)} serving${s > 1 ? 's' : ''}`, kcal: v.kcal, protein: v.p, carbs: v.c, fat: v.f, recipeId: it.id });
         }
-        C.save(); C.closeModal(); C.toast(`${it.name} logged to ${m.label}`); C.render();
+        C.save(); C.closeModal(); C.toast(`${it.name} logged to ${mealLabel}`); C.render();
       };
       C.modalActions['lib-del'] = () => {
         if (!confirm(`Delete "${it.name}" from your meals?`)) return;
