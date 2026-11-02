@@ -509,15 +509,20 @@
       } catch (e) { C.toast('Upload failed: ' + e.message); }
     },
     'coach-plan-file': () => {
-      const input = document.createElement('input'); input.type = 'file'; input.accept = 'application/json,.json';
+      const input = document.createElement('input'); input.type = 'file'; input.accept = 'application/json,.json'; input.multiple = true;
       input.onchange = async () => {
-        try {
-          const data = JSON.parse(await input.files[0].text());
-          if (!data.id || !data.name || !Array.isArray(data.days)) throw new Error('Not a GRIT plan file');
-          const { error } = await sb.from('plans').upsert({ id: data.id, data, visibility: 'all', published: true });
-          if (error) throw error;
-          C.toast(`${data.name} uploaded`); refreshCoach(); if (window.Training) Training.resetPlans();
-        } catch (e) { C.toast('Upload failed: ' + e.message); }
+        const done = [], failed = [];
+        for (const f of input.files) {
+          try {
+            const data = JSON.parse(await f.text());
+            if (!data.id || !data.name || !Array.isArray(data.days)) throw new Error('not a GRIT plan file');
+            const { error } = await sb.from('plans').upsert({ id: data.id, data, visibility: 'all', published: true });
+            if (error) throw error;
+            done.push(data.name);
+          } catch (e) { failed.push(`${f.name}: ${e.message}`); }
+        }
+        C.toast(failed.length ? `Uploaded ${done.length}. Failed: ${failed.join('; ')}` : done.length === 1 ? `${done[0]} uploaded` : `${done.length} plans uploaded`);
+        refreshCoach(); if (window.Training) Training.resetPlans();
       };
       input.click();
     },
