@@ -367,9 +367,6 @@ a.btn { text-decoration: none; }
 .mbar .progress { margin: 4px 0 0; height: 8px; }
 .meal-card { padding: 14px; }
 .meal-card.met { border-color: color-mix(in srgb, var(--good) 50%, var(--line)); }
-.hands { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.hand { padding: 6px 10px; border-radius: 99px; background: var(--surface-2); font-weight: 650; font-size: 14px; }
-.ex-line { font-size: 13px; margin-top: 6px; }
 .amt-list li { padding: 7px 0; }
 .amt-list .grow { font-size: 14px; }
 .logged { margin-top: 8px; border-top: 1px dashed var(--line); }
@@ -382,3 +379,10 @@ a.btn { text-decoration: none; }
 .pill-check input { position: absolute; opacity: 0; pointer-events: none; }
 .pill-check span { display: inline-block; padding: 6px 10px; border-radius: 99px; border: 1px solid var(--line); background: var(--surface-2); font-size: 13px; font-weight: 600; cursor: pointer; }
 .pill-check input:checked + span { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+.meal-target { font-size: 13px; font-weight: 650; color: var(--muted); margin-top: 6px; }
+.lib li { padding: 0; }
+.lib button { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 10px 2px; cursor: pointer; }
+.lib .meta .good { color: var(--good); font-weight: 700; }
+#rcp .list li { gap: 8px; }
+#rcp .g-input { width: 76px !important; flex: none; min-height: 38px; padding: 6px 8px; text-align: right; }

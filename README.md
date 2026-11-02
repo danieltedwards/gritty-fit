@@ -12,7 +12,7 @@ everyone from the **Coach dashboard**. It works offline; everything syncs when o
 | Tab | What you do there |
 | --- | --- |
 | **Today** | Dashboard: quick-add buttons, a backup reminder when one is due, your week-so-far score, daily accountability checklist (with streaks), calories vs. target, workouts this week, weight trend and distance to goal, active goals with countdowns, and a journal prompt. |
-| **Food** | **GRIT Nutrition plan**: enter your stats once (Food → Start) and pick **Cut / Maintain / Build**. Every day you get calories, protein, carbs and fat for that day's training (**Rest / Light / Moderate / Heavy**, from your weekly schedule; change any day with one tap) and a meal-by-meal plan built around **when you train** (pre-workout, workout shake, post-workout). Each meal shows **Simple** (hand portions: palms, fists, thumbs, plus Zone blocks) or **Precise** (grams and exact amounts of the foods you like). **Log this meal** in one tap, or log anything else into a meal. Plus food search, barcode scanning, one-tap re-add, 14-day chart. |
+| **Food** | **GRIT Nutrition plan**: enter your stats once (Food → Start) and pick **Cut / Maintain / Build**. Every day you get calories, protein, carbs and fat for that day's training (**Rest / Light / Moderate / Heavy**, from your weekly schedule; change any day with one tap) and a meal-by-meal plan built around **when you train** (pre-workout, workout shake, post-workout), with exact amounts of the foods you like. Per meal: **Log suggestion**, **Swap**, **📖 Choose a meal** (your saved meals + your coach's recipes, ranked by how well they fit that meal and scaled to its protein), **+ Food**, and **⭐ Save as meal**. Plus food search, barcode scanning, one-tap re-add, 14-day chart. |
 | **Train** | **Coach programs**: choose a plan (Training → Choose a plan), see where you are (week, effort target, deload), and run each day set by set: prescribed sets × reps, tempo, rest and cues, last session's numbers pre-filled, double-progression hints ("all sets hit 8 → add weight"), lower-body primer checklist, supersets, automatic rest timer, resume after closing the app. Weekly cardio target. Plus free-form workouts, one-tap **Repeat**, and **Lifts & PRs** with estimated 1-rep max charts. |
 | **Body** | Weigh-ins plus body fat %, muscle mass, and tape measurements (waist, chest, hips, arm, thigh, neck), all with trend charts. **Progress photos**: take or upload, then tap any two to compare side by side with the weight on each date. |
 | **Goals → Week** | Weekly accountability review: a score for the week (calories on target, workouts vs. goal, habits, journal), weight change, PRs, your wins, and the "tomorrow I will…" commitments you made, so you can check yourself. Step back through past weeks. |
@@ -71,6 +71,9 @@ list (they can also type the code in Settings → Account → Enter invite code)
 - **Targets**: set calories, protein, carbs, fat, workouts/week; applied on their next sync.
 - **Plans**: choose which "Selected clients" plans each client may pick.
 - **Plan library**: add plans, set each to **All clients** or **Selected clients**, hide/publish.
+- **Recipe library**: **+ New** (ingredients from the food search; macros per serving are calculated),
+  tags (breakfast, post-workout, …), instructions, hide/publish, or **Upload** a recipe file (JSON). Clients
+  see published recipes under **Choose a meal**, scaled to each meal's targets.
 
 ### Writing and editing plans
 Coach dashboard → **Plan library**:
@@ -104,7 +107,7 @@ adjust carbs first) and the **Zone** (blocks / hand portions so you can eat with
 - **Protein** 1.0 g/lb on a cut, 0.9 g/lb otherwise (×0.8 at higher body fat). **Fat** steady every day
   (≥ 0.3 g/lb; 25–30% of rest-day calories). **Carbs** fill the rest, so they rise with training.
 - **Meals**: carbs and fat are weighted around training (pre 1.5×, shake 2×, post 2.5× carbs; little fat
-  near training). Hand portions: palm ≈ 24–30 g protein, fist ≈ 25–30 g carbs, thumb ≈ 7–10 g fat.
+  near training); suggested amounts use the client's preferred staples.
 - A health question flags pregnancy, medical conditions affecting diet, or eating-disorder history:
   those clients start at maintenance and are marked for coach review.
 - Coach → client → **Targets**: calories ± per day and protein override, applied on their next sync.
@@ -262,6 +265,7 @@ food-lookup.js        food search, Open Food Facts, barcode scanning
 health.js             parses the Apple Health Shortcut's summary
 cloud.js              sign-in, sync, coach dashboard, invites, messages, targets
 editor.js             plan editor (templates and client versions)
+recipes.js            coach recipe library (editor, upload)
 config.js             Supabase URL + publishable key
 vendor/supabase.js    Supabase client library (v2.117.3), bundled for offline use
 supabase/schema.sql   database tables + row-level security (run once in Supabase)

@@ -11,7 +11,7 @@
   let cloudPlans = null; // [{id, data, visibility, published, sort}]
   const S = () => C.getState();
   const esc = (s) => C.esc(s);
-  const ARR = ['food', 'workouts', 'body', 'journal', 'goals', 'habits'];
+  const ARR = ['food', 'workouts', 'body', 'journal', 'goals', 'habits', 'savedMeals'];
   const INVITE_KEY = 'grit-invite';
 
   // ---------- records <-> state ----------
@@ -148,6 +148,7 @@
     await syncNow();
     await loadNotes();
     applyTargets();
+    loadRecipes(true).catch(() => {});
     sb.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', u.id).then(() => {});
     if (window.Training) Training.resetPlans();
     clearInterval(pullIv);
@@ -230,6 +231,19 @@
     if (error) throw error;
     coachData = null;
   }
+
+  // ---------- recipes (coach library; clients read their coach's published ones) ----------
+  let recipeCache = null;
+  async function loadRecipes(force) {
+    if (!user || !profile || (profile.role !== 'coach' && !profile.coach_id)) { recipeCache = []; return recipeCache; }
+    if (recipeCache && !force) return recipeCache;
+    const { data, error } = await sb.from('recipes').select('id,data,published').order('id');
+    if (error) throw error;
+    recipeCache = profile.role === 'coach' ? data : data.filter((r) => r.published);
+    return recipeCache;
+  }
+  async function saveRecipe(row) { const { error } = await sb.from('recipes').upsert(row); if (error) throw error; recipeCache = null; }
+  async function deleteRecipe(id) { const { error } = await sb.from('recipes').delete().eq('id', id); if (error) throw error; recipeCache = null; }
 
   // ---------- progress photos shared with the coach (private storage) ----------
   const BUCKET = 'progress-photos';
@@ -565,15 +579,16 @@
     if (!user || !profile || profile.role !== 'coach') return;
     coachLoading = true;
     try {
-      const [ov, inv, pl] = await Promise.all([
+      const [ov, inv, pl, rc] = await Promise.all([
         sb.rpc('coach_overview'),
         sb.from('invites').select('code,label,created_at,used_by').order('created_at', { ascending: false }),
         fetchPlans(),
+        loadRecipes(true).catch(() => []),
       ]);
       if (ov.error) throw ov.error;
       let builtin = [];
       try { builtin = (await (await fetch('plans/index.json')).json()).plans || []; } catch (_) { /* offline */ }
-      coachData = { clients: ov.data || [], invites: (inv.data || []).filter((i) => !i.used_by), plans: pl, builtin };
+      coachData = { clients: ov.data || [], invites: (inv.data || []).filter((i) => !i.used_by), plans: pl, builtin, recipes: rc };
     } catch (e) { coachData = { error: e.message }; }
     coachLoading = false;
     if (C.ui.tab === 'coach') C.render();
@@ -627,8 +642,10 @@
     if (custom.length) h += `<div class="res-head">Client versions</div>` + custom.map((p) => `<div class="client"><div class="title" style="font-weight:800">${esc(p.data.name)}</div>
         <div class="sub" style="font-size:13px">For ${esc(clientName(p.data.forClient))}${p.data.basedOn ? ' · based on ' + esc((plans.find((x) => x.id === p.data.basedOn) || { data: { name: p.data.basedOn } }).data.name) : ''}</div>
         <div class="row" style="margin-top:8px"><button class="btn small" data-action="coach-plan-edit" data-id="${esc(p.id)}">✏️ Edit</button><button class="btn small" data-action="plan-guide" data-id="${esc(p.id)}">View</button></div></div>`).join('');
+    const recipesHTML = window.Recipes ? Recipes.section(coachData.recipes) : '';
     if (notUploaded.length) h += `<div class="res-head">Ready to add</div><ul class="list">${notUploaded.map((b) => `<li><div class="grow"><div class="title">${esc(b.name)}</div><div class="meta">${esc(b.phase || '')}</div></div><button class="btn small primary" data-action="coach-plan-upload" data-file="${esc(b.file)}">Add</button></li>`).join('')}</ul>`;
     h += '</div>';
+    h += recipesHTML;
     return h;
   }
 
@@ -669,6 +686,7 @@
     },
     changed, settingsSection, saveName, todayCards, usesCloudPlans, fetchPlans, savePlan, deletePlan,
     canSharePhotos, sharePhoto, unsharePhoto, photoUrl,
+    loadRecipes, saveRecipe, deleteRecipe, recipes: () => recipeCache || [], refreshCoach: () => refreshCoach(),
     get user() { return user; }, get profile() { return profile; },
     get configured() { return !!sb; },
     // exposed for tests

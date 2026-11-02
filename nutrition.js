@@ -1,6 +1,6 @@
 /* GRIT Nutrition — one method, drawing on RP (calorie/macro priorities, carbs scaled to training,
    nutrient timing), the Vertical Diet (digestible, nutrient-dense staples; adjust carbs first) and the
-   Zone (blocks / hand portions so busy people can eat without a scale).
+   Zone (balanced meals, roughly even protein through the day).
    What changes day to day: training intensity (rest / light / moderate / heavy) and training timing
    (which meal you train after). Everything else comes from the client's profile and goal. */
 (function () {
@@ -9,8 +9,6 @@
   const S = () => C.getState();
   const esc = (s) => C.esc(s);
   const r5 = (n) => Math.round(n / 5) * 5;
-  const half = (n) => Math.max(0, Math.round(n * 2) / 2);
-  const fmtHalf = (n) => { const w = Math.floor(n), h = n - w >= 0.5; return w === 0 && h ? '½' : `${w}${h ? '½' : ''}`; };
 
   // ---------- method constants (GRIT Nutrition v1) ----------
   const JOB = { desk: [1.2, 'Desk / mostly sitting'], light: [1.35, 'On my feet some of the day'], active: [1.5, 'On my feet most of the day'], physical: [1.7, 'Physical / manual job'] };
@@ -121,11 +119,6 @@
     return slots.map((s, i) => ({ ...s, p: P[i], c: Cc[i], f: F[i], kcal: P[i] * 4 + Cc[i] * 4 + F[i] * 9 }));
   }
 
-  // Hand portions (simple) and Zone blocks
-  function simple(m, sex) {
-    const palm = sex === 'm' ? 30 : 24, fist = sex === 'm' ? 30 : 25, thumb = sex === 'm' ? 10 : 7;
-    return { palms: half(m.p / palm), fists: half(m.c / fist), thumbs: half(m.f / thumb), veg: m.role === 'shake' ? 0 : 1, blocks: { p: half(m.p / 7), c: half(m.c / 9), f: half(m.f / 1.5) } };
-  }
   // Precise: amounts of chosen staples that hit the meal's macros
   function amounts(m, picks) {
     const out = [];
@@ -223,7 +216,7 @@
       const pick = (g) => { const v = fd.getAll('pref_' + g); return v.length ? v : DEFAULT_PREFS[g]; };
       return { sex: fd.get('sex'), age, heightIn: Math.round(hIn2 * 10) / 10, weightLb: kg ? w / 0.45359237 : w, bodyFat: Number(fd.get('bf')) || null, job: fd.get('job'),
         goal: flagged && fd.get('goal') === 'cut' ? 'maintain' : fd.get('goal'), pace: fd.get('pace'), schedule, meals: Number(fd.get('meals')), trainAfter: Number(fd.get('after')),
-        shake: fd.get('shake') === 'on', prefs: { protein: pick('protein'), carb: pick('carb'), fat: pick('fat') }, flagged, style: p.style || 'simple', updated: C.todayISO() };
+        shake: fd.get('shake') === 'on', prefs: { protein: pick('protein'), carb: pick('carb'), fat: pick('fat') }, flagged, updated: C.todayISO() };
     }
     const preview = () => {
       const prof = readForm(new FormData(form));
@@ -259,8 +252,6 @@
       ${d.override ? `<button class="link-btn" data-action="nut-reset-day" style="font-size:13px">Reset to my usual ${DAYS[new Date(...dateIso.split('-').map((x, i) => (i === 1 ? x - 1 : +x))).getDay()]}</button>` : ''}
       <div style="margin-top:12px">${bar('Calories', got.kcal, t.kcal, '')}${bar('Protein', got.p, t.protein, ' g')}${bar('Carbs', got.c, t.carbs, ' g')}${bar('Fat', got.f, t.fat, ' g')}</div>
       <p class="hint" style="margin:8px 0 0">${GOALS[p.goal]}${p.goal !== 'maintain' ? ' · ' + p.pace : ''}${st.nutrition.coach && (st.nutrition.coach.kcalAdjust || st.nutrition.coach.protein) ? ' · adjusted by your coach' : ''}${p.flagged ? ' · <strong>coach review</strong>' : ''}</p></div>`;
-    const style = p.style || 'simple';
-    h += `<div class="segmented" style="margin-bottom:10px"><button class="${style === 'simple' ? 'active' : ''}" data-action="nut-style" data-style="simple">Simple</button><button class="${style === 'precise' ? 'active' : ''}" data-action="nut-style" data-style="precise">Precise</button></div>`;
     const picksFor = (m, i) => {
       const prefs = p.prefs || DEFAULT_PREFS;
       const rot = (arr, off) => arr[(i + off + ((C.ui.nutSwap || {})[m.key] || 0)) % arr.length];
@@ -272,26 +263,20 @@
       const logged = items.filter((f) => f.meal === m.label);
       const lg = { p: logged.reduce((a, f) => a + (f.protein || 0), 0), c: logged.reduce((a, f) => a + (f.carbs || 0), 0), f: logged.reduce((a, f) => a + (f.fat || 0), 0) };
       const done = m.p && lg.p >= m.p * 0.85;
-      const sp = simple(m, p.sex);
       const picks = picksFor(m, i);
       const am = amounts(m, picks);
-      let body;
-      if (style === 'simple') {
-        const parts = [sp.palms ? `<span class="hand">✋ ${fmtHalf(sp.palms)} palm${sp.palms > 1 ? 's' : ''} protein</span>` : '', sp.fists ? `<span class="hand">✊ ${fmtHalf(sp.fists)} fist${sp.fists > 1 ? 's' : ''} carbs</span>` : '', sp.thumbs ? `<span class="hand">👍 ${fmtHalf(sp.thumbs)} thumb${sp.thumbs > 1 ? 's' : ''} fat</span>` : '', sp.veg ? '<span class="hand">🥦 1 fist veggies</span>' : ''].filter(Boolean).join('');
-        body = `<div class="hands">${parts}</div><div class="sub" style="font-size:12px;margin-top:4px">≈ ${fmtHalf(sp.blocks.p)} blocks (Zone)</div>
-          <div class="sub ex-line">e.g. ${am.map((x) => esc(x.name.replace(/ \(.*\)/, '').toLowerCase())).join(' + ')}${sp.veg ? ' + veggies' : ''}</div>`;
-      } else {
-        body = `<div class="sub" style="font-size:13px">${m.p} g protein · ${m.c} g carbs · ${m.f} g fat · ${m.kcal} kcal</div>
-          <ul class="list amt-list">${am.map((x) => `<li><div class="grow">${esc(x.name)}</div><span class="num">${esc(qtyText(x))}</span></li>`).join('')}${m.role !== 'shake' ? `<li><div class="grow sub">Veggies: ${VEG}</div><span class="num sub">1+ cup</span></li>` : ''}</ul>`;
-      }
+      const body = `<div class="meal-target">${m.p} g protein · ${m.c} g carbs · ${m.f} g fat · ${m.kcal} kcal</div>
+          ${logged.length ? '' : `<div class="res-head" style="margin-top:8px">Suggested</div><ul class="list amt-list">${am.map((x) => `<li><div class="grow">${esc(x.name)}</div><span class="num">${esc(qtyText(x))}</span></li>`).join('')}${m.role !== 'shake' ? `<li><div class="grow sub">Veggies: ${VEG}</div><span class="num sub">1+ cup</span></li>` : ''}</ul>`}`;
       h += `<div class="card meal-card ${done ? 'met' : ''}"><div class="row" style="justify-content:space-between;flex-wrap:nowrap;align-items:flex-start">
           <div><strong>${esc(m.label)}</strong>${m.role !== 'other' ? ` <span class="chip ${m.role === 'shake' ? 'strong' : ''}">${m.role === 'pre' ? 'Pre-workout' : m.role === 'post' ? 'Post-workout' : 'Training'}</span>` : ''}<div class="sub" style="font-size:12px">${esc(m.when)}</div></div>
           <span class="sub" style="font-size:12px;white-space:nowrap">${logged.length ? `${Math.round(lg.p)}/${m.p} g P` : ''}${done ? ' ✓' : ''}</span></div>
         ${body}
         ${logged.length ? `<ul class="list logged">${logged.map((f) => `<li><div class="grow" data-action="edit-food" data-id="${f.id}" style="cursor:pointer"><div class="title">${esc(f.name)}</div><div class="meta">${[f.serving ? esc(f.serving) : '', `P ${Math.round(f.protein || 0)} C ${Math.round(f.carbs || 0)} F ${Math.round(f.fat || 0)}`].filter(Boolean).join(' · ')}</div></div><span class="num">${Math.round(f.kcal || 0)}</span><button class="del" data-action="del-food" data-id="${f.id}" aria-label="Delete">×</button></li>`).join('')}</ul>` : ''}
-        <div class="row meal-actions"><button class="btn small primary" data-action="nut-log-meal" data-key="${m.key}">${logged.length ? '+ Log suggestion' : 'Log this meal'}</button>
+        <div class="row meal-actions">
+          ${logged.length ? '' : `<button class="btn small primary" data-action="nut-log-meal" data-key="${m.key}">Log suggestion</button>${m.role !== 'shake' ? `<button class="btn small" data-action="nut-swap" data-key="${m.key}">Swap</button>` : ''}`}
+          <button class="btn small ${logged.length ? '' : ''}" data-action="nut-choose" data-key="${m.key}">📖 Choose a meal</button>
           <button class="btn small" data-action="add-food-slot" data-slot="${esc(m.label)}">+ Food</button>
-          ${m.role !== 'shake' ? `<button class="btn small" data-action="nut-swap" data-key="${m.key}">Swap</button>` : ''}</div></div>`;
+          ${logged.length ? `<button class="btn small" data-action="nut-save-meal" data-key="${m.key}">⭐ Save as meal</button>` : ''}</div></div>`;
     });
     const other = items.filter((f) => !d.meals.some((m) => m.label === f.meal));
     if (other.length) h += `<div class="card"><div class="card-head"><h2>Other</h2></div><ul class="list">${other.map((f) => `<li><div class="grow" data-action="edit-food" data-id="${f.id}" style="cursor:pointer"><div class="title">${esc(f.name)}</div><div class="meta">${esc(f.meal || '')} · P ${Math.round(f.protein || 0)} C ${Math.round(f.carbs || 0)} F ${Math.round(f.fat || 0)}</div></div><span class="num">${Math.round(f.kcal || 0)}</span><button class="del" data-action="del-food" data-id="${f.id}" aria-label="Delete">×</button></li>`).join('')}</ul></div>`;
@@ -304,7 +289,8 @@
     'nut-setup': () => setupForm(),
     'nut-type': (el) => { const st = S(); const n = st.nutrition; const iso = C.ui.foodDate; n.overrides = n.overrides || {}; n.overrides[iso] = { ...(n.overrides[iso] || {}), type: el.dataset.type }; C.save(); C.render(); },
     'nut-reset-day': () => { const n = S().nutrition; delete (n.overrides || {})[C.ui.foodDate]; C.save(); C.render(); },
-    'nut-style': (el) => { S().nutrition.profile.style = el.dataset.style; C.save(); C.render(); },
+    'nut-choose': (el) => chooseMeal(el.dataset.key),
+    'nut-save-meal': (el) => saveMeal(el.dataset.key),
     'nut-swap': (el) => { C.ui.nutSwap = C.ui.nutSwap || {}; C.ui.nutSwap[el.dataset.key] = (C.ui.nutSwap[el.dataset.key] || 0) + 1; C.render(); },
     'nut-log-meal': (el) => {
       const nm = C.ui.nutMeals; if (!nm) return;
@@ -315,6 +301,104 @@
       C.save(); C.toast(`${m.label} logged`); C.render();
     },
   };
+  // ---------- meal library (my saved meals + coach recipes) ----------
+  const r4 = (n) => Math.round(n * 4) / 4;
+  function libraryItems() {
+    const mine = (S().savedMeals || []).map((x) => ({ id: x.id, src: 'mine', name: x.name, tags: x.tags || [], per: x.per, items: x.items, servings: 1 }));
+    const coach = ((window.Cloud && Cloud.recipes && Cloud.recipes()) || []).map((r) => ({ id: r.id, src: 'coach', name: r.data.name, tags: r.data.tags || [], per: r.data.per, recipe: r.data }));
+    return [...mine, ...coach].filter((x) => x.per && x.per.kcal != null);
+  }
+  const suggestServings = (it, m) => (it.src === 'mine' ? 1 : Math.min(4, Math.max(0.25, r4(m.p && it.per.p ? m.p / it.per.p : 1))));
+  const scaled = (per, s) => ({ kcal: Math.round(per.kcal * s), p: Math.round(per.p * s), c: Math.round(per.c * s), f: Math.round(per.f * s) });
+  function fitScore(x, m) { const rel = (a, b) => Math.abs(a - b) / Math.max(b, 10); return rel(x.p, m.p) + 0.6 * rel(x.c, m.c) + 0.4 * rel(x.f, m.f); }
+  const fitText = (x, m) => `<span class="${Math.abs(x.p - m.p) <= Math.max(5, m.p * 0.15) ? 'good' : ''}">P ${x.p}/${m.p}</span> · <span class="${Math.abs(x.c - m.c) <= Math.max(8, m.c * 0.2) ? 'good' : ''}">C ${x.c}/${m.c}</span> · <span class="${Math.abs(x.f - m.f) <= Math.max(4, m.f * 0.25) ? 'good' : ''}">F ${x.f}/${m.f}</span>`;
+  const ROLE_TAGS = { pre: ['pre-workout'], post: ['post-workout'], shake: ['shake', 'post-workout'] };
+
+  function chooseMeal(key) {
+    const nm = C.ui.nutMeals; const m = nm && nm.meals.find((x) => x.key === key); if (!m) return;
+    if (window.Cloud && Cloud.loadRecipes) Cloud.loadRecipes().then(() => { if (document.getElementById('lib-list')) draw(); }).catch(() => {});
+    let tab = 'all', q = '';
+    C.openModal(`<h2>Choose a meal · ${esc(m.label)}</h2>
+      <div class="meal-target" style="margin-top:0">Target: ${m.p} g P · ${m.c} g C · ${m.f} g F · ${m.kcal} kcal</div>
+      <input type="search" id="lib-q" placeholder="Search meals and recipes" autocomplete="off" style="margin:10px 0">
+      <div class="segmented" id="lib-tabs" style="margin-bottom:8px"><button class="active" data-t="all">All</button><button data-t="mine">My meals</button><button data-t="coach">Coach recipes</button></div>
+      <div id="lib-list"></div>`, null, { hideSave: true });
+    const draw = () => {
+      const want = ROLE_TAGS[m.role] || [];
+      let items = libraryItems().filter((x) => tab === 'all' || x.src === tab)
+        .filter((x) => !q || (x.name + ' ' + x.tags.join(' ')).toLowerCase().includes(q));
+      items = items.map((x) => { const s = suggestServings(x, m); const v = scaled(x.per, s); return { ...x, s, v, score: fitScore(v, m) - (x.tags.some((t) => want.includes(t)) ? 0.3 : 0) }; }).sort((a, b) => a.score - b.score);
+      const box = document.getElementById('lib-list'); if (!box) return;
+      box.innerHTML = items.length ? `<ul class="list lib">${items.map((x) => `<li><button data-modal-action="lib-open" data-id="${esc(x.id)}" data-src="${x.src}" data-key="${key}">
+          <div class="title">${esc(x.name)} ${x.src === 'coach' ? '<span class="chip">Coach</span>' : '<span class="chip">Mine</span>'}</div>
+          <div class="meta">${x.src === 'coach' ? `${fmtQ(x.s)} serving${x.s > 1 ? "s" : ""} · ` : ''}${x.v.kcal} kcal · ${fitText(x.v, m)}</div></button></li>`).join('')}</ul>`
+        : `<div class="empty">${tab === 'mine' || !libraryItems().length ? 'No saved meals yet. Log a meal, then tap ⭐ Save as meal.' : 'Nothing matches.'}${tab === 'coach' ? ' Your coach hasn\'t added recipes yet.' : ''}</div>`;
+    };
+    document.getElementById('lib-q').addEventListener('input', (e) => { q = e.target.value.trim().toLowerCase(); draw(); });
+    document.getElementById('lib-tabs').addEventListener('click', (e) => { const b = e.target.closest('[data-t]'); if (!b) return; e.preventDefault(); tab = b.dataset.t; [...e.currentTarget.children].forEach((x) => x.classList.toggle('active', x === b)); draw(); });
+    draw();
+  }
+  const fmtQ = (q) => fmtQty(q) || '0';
+
+  function openLibItem(id, src, key) {
+    const nm = C.ui.nutMeals; const m = nm && nm.meals.find((x) => x.key === key); if (!m) return;
+    const it = libraryItems().find((x) => x.id === id && x.src === src); if (!it) return;
+    let s = suggestServings(it, m);
+    const r = it.recipe;
+    C.closeModal();
+    setTimeout(() => {
+      C.openModal(`<h2>${esc(it.name)}</h2>
+        ${it.tags.length ? `<div style="margin-bottom:8px">${it.tags.map((t) => `<span class="chip">${esc(t)}</span>`).join('')}</div>` : ''}
+        <div class="row" style="flex-wrap:nowrap;margin-bottom:10px"><span class="sub" style="flex:1">${src === 'coach' ? 'Servings' : 'Amount'}</span>
+          <button class="btn small" data-modal-action="lib-s" data-d="-0.25">−</button><strong id="lib-s" style="min-width:56px;text-align:center"></strong><button class="btn small" data-modal-action="lib-s" data-d="0.25">+</button></div>
+        <div class="card" style="background:var(--surface-2)" id="lib-fit"></div>
+        ${src === 'mine' ? `<ul class="list">${it.items.map((x) => `<li><div class="grow"><div class="title">${esc(x.name)}</div><div class="meta">${esc(x.serving || '')}</div></div><span class="num">${Math.round(x.kcal || 0)}</span></li>`).join('')}</ul>` : ''}
+        ${r && r.ingredients && r.ingredients.length ? `<div class="res-head">Ingredients (whole recipe, ${r.servings || 1} serving${(r.servings || 1) > 1 ? 's' : ''})</div><ul class="list">${r.ingredients.map((g) => `<li><div class="grow">${esc(g.name)}</div><span class="num">${esc(g.amount || (g.grams ? g.grams + ' g' : ''))}</span></li>`).join('')}</ul>` : ''}
+        ${r && r.instructions ? `<div class="res-head">How to make it</div><p style="white-space:pre-wrap;margin-top:4px">${esc(r.instructions)}</p>` : ''}
+        ${r && r.prepMin ? `<p class="sub">⏱ ${r.prepMin} min</p>` : ''}
+        <button class="btn primary block" data-modal-action="lib-log" style="margin-top:8px">Log to ${esc(m.label)}</button>
+        ${src === 'mine' ? '<button class="btn danger small" data-modal-action="lib-del" style="margin-top:10px">Delete saved meal</button>' : ''}`, null, { hideSave: true });
+      const upd = () => { const v = scaled(it.per, s); document.getElementById('lib-s').textContent = src === 'coach' ? fmtQ(s) : `${fmtQ(s)}×`; document.getElementById('lib-fit').innerHTML = `<strong>${v.kcal} kcal</strong> · ${fitText(v, m)}`; };
+      upd();
+      C.modalActions['lib-s'] = (b) => { s = Math.min(6, Math.max(0.25, s + Number(b.dataset.d))); upd(); };
+      C.modalActions['lib-log'] = () => {
+        const st = S(); const now = new Date(); const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        if (src === 'mine') {
+          it.items.forEach((x) => st.food.push({ id: C.uid(), date: nm.date, time, meal: m.label, name: x.name, serving: s === 1 ? x.serving : `${fmtQ(s)}× ${x.serving || 'serving'}`,
+            kcal: Math.round((x.kcal || 0) * s), protein: Math.round((x.protein || 0) * s), carbs: Math.round((x.carbs || 0) * s), fat: Math.round((x.fat || 0) * s) }));
+        } else {
+          const v = scaled(it.per, s);
+          st.food.push({ id: C.uid(), date: nm.date, time, meal: m.label, name: it.name, serving: `${fmtQ(s)} serving${s > 1 ? 's' : ''}`, kcal: v.kcal, protein: v.p, carbs: v.c, fat: v.f, recipeId: it.id });
+        }
+        C.save(); C.closeModal(); C.toast(`${it.name} logged to ${m.label}`); C.render();
+      };
+      C.modalActions['lib-del'] = () => {
+        if (!confirm(`Delete "${it.name}" from your meals?`)) return;
+        const st = S(); st.savedMeals = (st.savedMeals || []).filter((x) => x.id !== it.id); C.save(); C.closeModal(); C.render();
+      };
+    }, 0);
+  }
+
+  function saveMeal(key) {
+    const nm = C.ui.nutMeals; const m = nm && nm.meals.find((x) => x.key === key); if (!m) return;
+    const st = S();
+    const logged = st.food.filter((f) => f.date === nm.date && f.meal === m.label);
+    if (!logged.length) return;
+    const tot = { kcal: 0, p: 0, c: 0, f: 0 };
+    logged.forEach((f) => { tot.kcal += f.kcal || 0; tot.p += f.protein || 0; tot.c += f.carbs || 0; tot.f += f.fat || 0; });
+    const tagsFor = ROLE_TAGS[m.role] || [];
+    C.openModal(`<h2>Save as meal</h2>
+      ${C.field('Name', `<input type="text" name="mname" value="${esc(logged.map((f) => f.name.replace(/ \(.*\)/, '')).slice(0, 2).join(' + '))}" required autofocus>`)}
+      <ul class="list">${logged.map((f) => `<li><div class="grow"><div class="title">${esc(f.name)}</div><div class="meta">${esc(f.serving || '')}</div></div><span class="num">${Math.round(f.kcal || 0)}</span></li>`).join('')}</ul>
+      <p class="sub">${Math.round(tot.kcal)} kcal · P ${Math.round(tot.p)} · C ${Math.round(tot.c)} · F ${Math.round(tot.f)}</p>`, (fd) => {
+      st.savedMeals = st.savedMeals || [];
+      st.savedMeals.push({ id: C.uid(), name: fd.get('mname').trim() || 'My meal', tags: tagsFor, createdAt: C.todayISO(),
+        items: logged.map((f) => ({ name: f.name, serving: f.serving || '', kcal: f.kcal || 0, protein: f.protein || 0, carbs: f.carbs || 0, fat: f.fat || 0 })),
+        per: { kcal: Math.round(tot.kcal), p: Math.round(tot.p), c: Math.round(tot.c), f: Math.round(tot.f) } });
+      C.save(); C.toast('Saved to My meals ⭐');
+    }, { saveLabel: 'Save' });
+  }
+
   function onChange(e) {
     if (!e.target.matches || !e.target.matches('[data-nut-after]')) return;
     const n = S().nutrition, iso = C.ui.foodDate;
@@ -326,8 +410,12 @@
   function slotsFor(iso) { const d = dayInfo(iso); return d ? d.meals.map((m) => m.label) : null; }
 
   window.Nutrition = {
-    init(ctx) { C = ctx; Object.assign(ctx.actions, actions); document.addEventListener('change', onChange); },
+    init(ctx) {
+      C = ctx; Object.assign(ctx.actions, actions);
+      ctx.modalActions['lib-open'] = (b) => openLibItem(b.dataset.id, b.dataset.src, b.dataset.key);
+      document.addEventListener('change', onChange);
+    },
     active, dayInfo, targetsFor, foodCard, slotsFor, setupForm,
-    _macros: macros, _layout: layout, _distribute: distribute, _simple: simple, _amounts: amounts, FOODS, TRAIN,
+    _macros: macros, _layout: layout, _distribute: distribute, _amounts: amounts, FOODS, TRAIN,
   };
 })();

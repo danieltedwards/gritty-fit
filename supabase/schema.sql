@@ -350,3 +350,25 @@ create policy "progress photos own" on storage.objects for all to authenticated
 drop policy if exists "progress photos coach read" on storage.objects;
 create policy "progress photos coach read" on storage.objects for select to authenticated
   using (bucket_id = 'progress-photos' and public.coaches(public.photo_owner(name)));
+
+-- ---------- recipe library (coach) ----------
+create table if not exists public.recipes (
+  id          text primary key,
+  coach_id    uuid not null default auth.uid() references public.profiles (id) on delete cascade,
+  data        jsonb not null,
+  published   boolean not null default true,
+  updated_at  timestamptz not null default now()
+);
+alter table public.recipes enable row level security;
+drop trigger if exists recipes_touch on public.recipes;
+create trigger recipes_touch before insert or update on public.recipes
+  for each row execute function public.touch_updated_at();
+drop policy if exists "recipes coach" on public.recipes;
+create policy "recipes coach" on public.recipes for all to authenticated
+  using (coach_id = auth.uid() and public.is_coach())
+  with check (coach_id = auth.uid() and public.is_coach());
+drop policy if exists "recipes client read" on public.recipes;
+create policy "recipes client read" on public.recipes for select to authenticated
+  using (published and coach_id = public.my_coach());
+grant select, insert, update, delete on public.recipes to authenticated;
+revoke all on public.recipes from anon;
