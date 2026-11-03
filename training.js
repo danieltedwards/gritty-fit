@@ -54,12 +54,15 @@
     return p;
   }
   // Views are synchronous: if a plan isn't loaded yet, kick off the load and re-render when it arrives.
+  const failedPlans = new Set();
   function planNow(id) {
     if (!id) return null;
     if (planCache.has(id)) return planCache.get(id);
-    loadPlan(id).then(() => C.render()).catch(() => {});
+    if (failedPlans.has(id)) return null;
+    loadPlan(id).then(() => C.render()).catch(() => { failedPlans.add(id); C.render(); });
     return undefined;
   }
+  const stopBtn = (id) => `<button class="btn small" data-action="plan-leave" data-id="${esc(id)}">Stop</button>`;
 
   // ---------- active programs (a client can run up to 3 plans at once; programs[0] is the primary) ----------
   const MAX_PLANS = 3;
@@ -256,15 +259,16 @@
     const st = S(), as = st.activeSession;
     let h = '';
     const plan = planNow(prog.planId);
-    if (plan === undefined) return h + '<div class="card"><div class="empty">Loading your plan…</div></div>';
-    if (!plan) return h;
+    if (plan === undefined) return h + `<div class="card"><div class="card-head"><h2>${n > 1 ? `Program ${idx + 1} of ${n}` : 'Your program'}</h2>${stopBtn(prog.planId)}</div><div class="empty">Loading your plan…</div></div>`;
+    if (!plan) return h + `<div class="card"><div class="card-head"><h2>${n > 1 ? `Program ${idx + 1} of ${n}` : 'Your program'}</h2></div><p class="sub" style="margin-top:0">This plan isn't available anymore (it may have been removed or hidden from the plan library). Stop it to free up the slot; your logged workouts are kept.</p>
+      <div class="row"><button class="btn danger" data-action="plan-leave" data-id="${esc(prog.planId)}">Stop this plan</button>${idx === 0 ? '<button class="btn" data-action="plans-open">Plans</button>' : ''}</div></div>`;
     const wk = programWeek(prog, plan);
     const pw = atWeek(plan, wk.week);
     const doneIds = new Set(sessionsThisProgramWeek(prog, wk).map((w) => w.dayId));
     const nd = nextDay(pw, prog, wk);
     const cardioDone = st.workouts.filter((w) => isCardio(w) && w.date >= wk.weekStart && w.date <= wk.weekEnd).length;
     const P = `data-plan="${esc(plan.id)}"`;
-    h += `<div class="card"><div class="card-head"><h2>${n > 1 ? `Program ${idx + 1} of ${n}` : 'Your program'}</h2><span class="row" style="gap:6px;flex-wrap:nowrap">${idx === 0 ? '<button class="btn small" data-action="plans-open">Plans</button>' : ''}<button class="btn small" data-action="plan-guide" data-id="${esc(plan.id)}">Guide</button></span></div>
+    h += `<div class="card"><div class="card-head"><h2>${n > 1 ? `Program ${idx + 1} of ${n}` : 'Your program'}</h2><span class="row" style="gap:6px;flex-wrap:nowrap">${idx === 0 ? '<button class="btn small" data-action="plans-open">Plans</button>' : ''}<button class="btn small" data-action="plan-guide" data-id="${esc(plan.id)}">Guide</button>${stopBtn(plan.id)}</span></div>
       <div style="font-weight:800;font-size:18px;line-height:1.2">${esc(plan.name)}</div><div class="sub">${esc(plan.phase || '')}</div>
       ${wk.before ? `<p class="sub">Starts ${C.prettyDate(prog.startDate)}.</p>` : wk.done ? `<p><strong>Program complete 🎉</strong> <span class="sub">Talk to your coach about the next phase.</span></p>` : `
       <div class="week-pill">Week ${wk.week} of ${plan.weeks}${wk.blocks > 1 ? ` · Block ${wk.block}` : ''}${wk.guide ? ` · ${esc(wk.guide.label)}` : ''}</div>
@@ -322,6 +326,7 @@
     if (!planIndex) { loadIndex().then(() => C.render()).catch((e) => C.toast('Couldn\'t load plans: ' + e.message)); return '<div class="empty">Loading plans…</div>'; }
     const active = new Set(progs().map((p) => p.planId)), full = active.size >= MAX_PLANS;
     let h = `<p class="sub" style="margin-top:0">Run up to ${MAX_PLANS} plans at once (for example a lifting plan plus a conditioning or mobility plan). ${active.size ? `You're running ${active.size} of ${MAX_PLANS}.` : ''} Your history stays when you stop a plan.</p>`;
+    if (active.size) h += `<div class="card"><div class="card-head"><h2>Your active plans</h2></div><ul class="list">${progs().map((pr) => { const pl = planCache.get(pr.planId); return `<li><div class="grow"><div class="title">${esc(pl ? pl.name : pr.planId)}</div><div class="meta">Started ${esc(C.prettyDate(pr.startDate))}${!pl && failedPlans.has(pr.planId) ? ' · no longer available' : ''}</div></div><button class="btn small danger" data-action="plan-leave" data-id="${esc(pr.planId)}">Stop</button></li>`; }).join('')}</ul></div>`;
     if (!planIndex.length) h += '<div class="card"><div class="empty">Your coach hasn\'t made any plans available to you yet.</div></div>';
     h += planIndex.map((p) => `<div class="card" ${p.forMe ? 'style="border-color:var(--accent)"' : ''}>${p.forMe ? '<div class="week-pill" style="margin:0 0 8px">✨ Made for you</div>' : ''}<div style="font-weight:800;font-size:18px">${esc(p.name)}</div><div class="sub">${esc(p.phase || '')}</div>
       <p class="sub" style="margin:8px 0">${esc(p.summary || '')}</p>
@@ -612,7 +617,7 @@
     'plan-leave': (el) => {
       const st = S(), id = el.dataset.id || (progs()[0] && progs()[0].planId), pr = progFor(id);
       if (!pr) return;
-      const nm = (planNow(id) || {}).name;
+      const nm = (planCache.get(id) || {}).name;
       if (!confirm(`Stop following ${nm || 'this plan'}? Your logged workouts are kept.`)) return;
       (st.programHistory || (st.programHistory = [])).push({ ...pr, endDate: C.todayISO() });
       setProgs(progs().filter((p) => p.planId !== id)); C.save(); C.render();
@@ -728,7 +733,7 @@
     },
     afterRender(tab) { if (tab === 'session') sessionClock(); },
     preload() { progs().forEach((p) => loadPlan(p.planId).then(() => C.render()).catch(() => {})); },
-    resetPlans() { planIndex = null; indexPromise = null; planCache.clear(); progs().forEach((p) => loadPlan(p.planId).then(() => C.softRender ? C.softRender() : C.render()).catch(() => {})); },
+    resetPlans() { planIndex = null; indexPromise = null; planCache.clear(); failedPlans.clear(); progs().forEach((p) => loadPlan(p.planId).then(() => C.softRender ? C.softRender() : C.render()).catch(() => {})); },
     progs, planNow: (id) => planNow(id), loadPlan, plannedOn,
     trainCard, todayCard, summary, isCardio, renderBody,
     cachePlan(id, data) { planCache.set(id, data); },
