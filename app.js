@@ -21,7 +21,7 @@
   const relDay = (iso) => { const diff = daysBetween(iso, todayISO()); return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : prettyDate(iso); };
   const byDateDesc = (a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || ''));
 
-  const APP_VERSION = '2026.11.04-f';
+  const APP_VERSION = '2026.11.04-g';
   // ---------- state ----------
   const DEFAULT_STATE = () => ({
     version: 1,
@@ -37,6 +37,7 @@
     habitLog: {},
     health: {},
     program: null,
+    programs: [],
     activeSession: null,
     nutrition: null,
     savedMeals: [],
@@ -56,7 +57,7 @@
   // write immediately, without triggering a cloud push (used when applying synced changes)
   const saveLocal = () => (ui.viewAs ? Promise.resolve() : DB.setState(S));
 
-  const ui = { tab: 'today', foodDate: todayISO(), bodySeg: 'weigh', goalSeg: 'journal', reviewWeek: null, compare: [], photoUrls: new Map() };
+  const ui = { tab: 'today', foodDate: todayISO(), trainDate: todayISO(), calMode: { food: 'day', train: 'week' }, bodySeg: 'weigh', goalSeg: 'journal', reviewWeek: null, compare: [], photoUrls: new Map() };
 
   const wUnit = () => S.settings.units;
   const lUnit = () => (S.settings.units === 'kg' ? 'cm' : 'in');
@@ -304,14 +305,83 @@
     return h;
   };
 
+  // ---------- calendar (Food + Train): day / week / month, tap a day to see it ----------
+  const DOW = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+  const monthStart = (iso) => iso.slice(0, 8) + '01';
+  const addMonths = (iso, n) => { const d = parseISO(monthStart(iso)); d.setMonth(d.getMonth() + n); return isoOf(d); };
+  const shortK = (n) => (n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(Math.round(n)));
+  const cfWodUrl = (iso) => `https://www.crossfit.com/${iso.slice(2, 4)}${iso.slice(5, 7)}${iso.slice(8, 10)}`;
+  function calendar(kind, sel, { mark, maxDate } = {}) {
+    const mode = ui.calMode[kind], t = todayISO();
+    const cell = (iso, faded) => {
+      const m = mark ? mark(iso) : null, off = maxDate && iso > maxDate;
+      return `<button class="cal-day${iso === sel ? ' sel' : ''}${iso === t ? ' today' : ''}${faded ? ' faded' : ''}" data-action="cal-pick" data-kind="${kind}" data-date="${iso}" ${off ? 'disabled' : ''}>
+        <span class="cal-n">${+iso.slice(8)}</span>${m ? `<span class="cal-m ${m.cls || ''}">${m.html}</span>` : '<span class="cal-m"></span>'}</button>`;
+    };
+    let label, body = '';
+    if (mode === 'month') {
+      const ms = monthStart(sel), gs = weekStart(ms), nextM = addMonths(ms, 1);
+      label = prettyDate(ms, { month: 'long', year: 'numeric' });
+      body = `<div class="cal-grid">${DOW.map((d) => `<span class="cal-dow">${d}</span>`).join('')}`;
+      for (let d = gs; d < nextM || weekStart(d) !== d; d = addDays(d, 1)) body += cell(d, d < ms || d >= nextM);
+      body += '</div>';
+    } else if (mode === 'week') {
+      const ws = weekStart(sel);
+      label = `${prettyDate(ws, { month: 'short', day: 'numeric' })} – ${prettyDate(addDays(ws, 6), { month: 'short', day: 'numeric' })}`;
+      body = `<div class="cal-grid">${DOW.map((d) => `<span class="cal-dow">${d}</span>`).join('')}${Array.from({ length: 7 }, (_, i) => cell(addDays(ws, i))).join('')}</div>`;
+    } else label = relDay(sel);
+    const atMax = maxDate && (mode === 'month' ? addMonths(sel, 1) > maxDate : mode === 'week' ? addDays(weekStart(sel), 7) > maxDate : sel >= maxDate);
+    return `<div class="cal card"><div class="segmented cal-seg">${[['day', 'Day'], ['week', 'Week'], ['month', 'Month']].map(([k, l]) =>
+        `<button class="${mode === k ? 'active' : ''}" data-action="cal-mode" data-kind="${kind}" data-mode="${k}">${l}</button>`).join('')}</div>
+      <div class="daynav"><button class="btn small" data-action="cal-nav" data-kind="${kind}" data-delta="-1" aria-label="Previous">‹</button>
+      <strong>${label}</strong><button class="btn small" data-action="cal-nav" data-kind="${kind}" data-delta="1" aria-label="Next" ${atMax ? 'disabled' : ''}>›</button></div>
+      ${body}${mode !== 'day' ? `<div class="cal-sel">${prettyDate(sel, { weekday: 'long', month: 'short', day: 'numeric' })}${sel !== t ? ' <a href="#" data-action="cal-pick" data-kind="' + kind + '" data-date="' + t + '">Today</a>' : ''}</div>` : ''}</div>`;
+  }
+  const calDateKey = { food: 'foodDate', train: 'trainDate' };
+  function calMax(kind) { return kind === 'food' && !(window.Nutrition && Nutrition.active()) ? todayISO() : null; }
+  function foodMark(iso) {
+    const k = sumKcal(foodOn(iso));
+    if (!k) return null;
+    return { html: shortK(k), cls: k <= kcalTarget(iso) * 1.05 ? 'good' : 'bad' };
+  }
+  function trainMark(iso) {
+    const done = S.workouts.filter((w) => w.date === iso).length;
+    const plan = window.Training && Training.plannedOn ? Training.plannedOn(iso).filter((x) => !(iso === todayISO() && S.workouts.some((w) => w.date === iso && w.planId === x.plan.id))).length : 0;
+    if (!done && !plan) return null;
+    return { html: '<i class="dot done"></i>'.repeat(Math.min(done, 3)) + '<i class="dot plan"></i>'.repeat(Math.min(plan, 3 - Math.min(done, 3))), cls: 'dots' };
+  }
+  function workoutEntry(w) {
+    return `<div class="entry"><div class="row" style="justify-content:space-between">
+        <div data-action="${w.sets ? 'view-session' : 'edit-workout'}" data-id="${w.id}" style="cursor:pointer;flex:1"><div class="meta">${w.source === 'Apple Health' ? '⌚ ' : ''}${relDay(w.date)}${w.time ? ' ' + w.time : ''}${w.minutes ? ' · ' + w.minutes + ' min' : ''}${w.kcal ? ' · ' + w.kcal + ' kcal' : ''}${w.avgHr ? ' · ' + w.avgHr + ' bpm' : ''}${w.intensity ? ' · RPE ' + w.intensity : ''}</div>
+        <strong>${esc(w.type)}</strong></div>${w.sets || w.cardio ? '' : `<button class="btn small" style="flex:none" data-action="repeat-workout" data-id="${w.id}">Repeat</button>`}<button class="del" data-action="del-workout" data-id="${w.id}" aria-label="Delete">×</button></div>
+        ${w.sets ? `<p class="sub">${Training.summary(w)}</p>` : w.exercises ? `<p class="sub">${esc(w.exercises)}</p>` : ''}${w.notes ? `<p>${esc(w.notes)}</p>` : ''}</div>`;
+  }
+  function trainDayCard(d) {
+    const t = todayISO();
+    const done = S.workouts.filter((w) => w.date === d);
+    const planned = (window.Training && Training.plannedOn ? Training.plannedOn(d) : []).filter((x) => !(d === t && done.some((w) => w.planId === x.plan.id)));
+    let h = `<div class="card"><div class="card-head"><h2>${d === t ? 'Today' : prettyDate(d, { weekday: 'short', month: 'short', day: 'numeric' })}</h2><button class="btn small" data-action="add-workout" data-date="${d}">+ Log</button></div>`;
+    h += done.map(workoutEntry).join('');
+    h += planned.map((x) => {
+      const names = x.day.blocks.flatMap((b) => b.exercises.map((e) => e.name));
+      return `<div class="entry planned"><div class="row" style="flex-wrap:nowrap"><div style="flex:1;min-width:0"><div class="meta">Planned · ${esc(x.plan.name)} · Week ${x.week}${x.guide && x.guide.deload ? ' · deload' : ''}</div>
+        <strong>${esc(x.day.label)}: ${esc(x.day.name)}</strong></div>
+        ${d === t && !S.activeSession ? `<button class="btn small primary" style="flex:none" data-action="session-start" data-day="${x.day.id}" data-plan="${esc(x.plan.id)}">Start</button>` : `<button class="btn small" style="flex:none" data-action="plan-guide" data-id="${esc(x.plan.id)}" data-week="${x.week}">Preview</button>`}</div>
+        ${names.length ? `<p class="sub">${esc(names.slice(0, 8).join(' · '))}${names.length > 8 ? ' …' : ''}</p>` : ''}</div>`;
+    }).join('');
+    if (!done.length && !planned.length) h += `<div class="empty">${d > t ? 'Nothing planned.' : d === t ? 'Nothing logged yet today.' : 'Rest day. Nothing logged.'}</div>`;
+    if (d <= t) h += `<a class="wod-link" href="${cfWodUrl(d)}" target="_blank" rel="noopener"><span><strong>CrossFit.com WOD</strong><span class="sub"> · ${d === t ? 'today' : prettyDate(d, { month: 'short', day: 'numeric' })}</span></span><span aria-hidden="true">↗</span></a>`;
+    if (d > t && planned.length) h += '<p class="hint" style="margin-bottom:0">Your plan sets the order of sessions, not the weekdays. Train on whichever days suit you.</p>';
+    return h + '</div>';
+  }
+
   const fmtSleep = (min) => `${Math.floor(min / 60)}h ${pad(Math.round(min % 60))}m`;
   const macroText = (f) => [f.protein ? 'P ' + fmt(f.protein, 0) : '', f.carbs ? 'C ' + fmt(f.carbs, 0) : '', f.fat ? 'F ' + fmt(f.fat, 0) : ''].filter(Boolean).join(' ');
   views.food = () => {
     const d = ui.foodDate, st = S.settings;
     const items = foodOn(d).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
     const eaten = sumKcal(items), protein = sumProtein(items);
-    let h = `<div class="daynav"><button class="btn small" data-action="food-day" data-delta="-1">‹</button>
-      <strong>${relDay(d)}</strong><button class="btn small" data-action="food-day" data-delta="1" ${d >= todayISO() ? 'disabled' : ''}>›</button></div>`;
+    let h = calendar('food', d, { mark: foodMark, maxDate: calMax('food') });
     const planOn = window.Nutrition && Nutrition.active();
     if (window.Nutrition && (planOn || !st.hideNutritionPrompt)) h += Nutrition.foodCard(d, items);
     if (!planOn) {
@@ -359,6 +429,7 @@
     const thisWeek = workoutsInWeek(ws);
     const mins = thisWeek.reduce((a, w) => a + (w.minutes || 0), 0);
     let h = Training.trainCard();
+    h += calendar('train', ui.trainDate, { mark: trainMark }) + trainDayCard(ui.trainDate);
     h += `<div class="grid-2"><div class="card"><div class="card-head"><h2>This week</h2></div><div class="big">${new Set(thisWeek.map((w) => w.date)).size}<small> / ${st.workoutsPerWeek} days</small></div></div>
       <div class="card"><div class="card-head"><h2>Minutes</h2></div><div class="big">${fmt(mins, 0)}<small> min</small></div></div></div>`;
 
@@ -376,10 +447,7 @@
 
     const list = [...S.workouts].sort(byDateDesc);
     h += `<div class="card"><div class="card-head"><h2>History</h2><button class="btn small primary" data-action="add-workout">+ Add</button></div>`;
-    h += list.length ? list.slice(0, 60).map((w) => `<div class="entry"><div class="row" style="justify-content:space-between">
-        <div data-action="${w.sets ? 'view-session' : 'edit-workout'}" data-id="${w.id}" style="cursor:pointer;flex:1"><div class="meta">${w.source === 'Apple Health' ? '⌚ ' : ''}${relDay(w.date)}${w.time ? ' ' + w.time : ''}${w.minutes ? ' · ' + w.minutes + ' min' : ''}${w.kcal ? ' · ' + w.kcal + ' kcal' : ''}${w.avgHr ? ' · ' + w.avgHr + ' bpm' : ''}${w.intensity ? ' · RPE ' + w.intensity : ''}</div>
-        <strong>${esc(w.type)}</strong></div>${w.sets || w.cardio ? '' : `<button class="btn small" style="flex:none" data-action="repeat-workout" data-id="${w.id}">Repeat</button>`}<button class="del" data-action="del-workout" data-id="${w.id}" aria-label="Delete">×</button></div>
-        ${w.sets ? `<p class="sub">${Training.summary(w)}</p>` : w.exercises ? `<p class="sub">${esc(w.exercises)}</p>` : ''}${w.notes ? `<p>${esc(w.notes)}</p>` : ''}</div>`).join('')
+    h += list.length ? list.slice(0, 60).map(workoutEntry).join('')
       : `<div class="empty">No workouts logged yet.</div>`;
     h += `</div>`;
     return h;
@@ -1220,7 +1288,15 @@
     'quick-food': (el) => { const f = find('food', el.dataset.id); S.food.push({ ...f, id: uid(), date: ui.foodDate, time: nowTime() }); save(); render(); toast(`Added ${f.name}`); },
     'del-food': (el) => { S.food = S.food.filter((x) => x.id !== el.dataset.id); save(); render(); },
     'food-day': (el) => { ui.foodDate = addDays(ui.foodDate, +el.dataset.delta); if (ui.foodDate > todayISO()) ui.foodDate = todayISO(); render(); },
-    'add-workout': () => workoutForm(),
+    'add-workout': (el) => workoutForm(el && el.dataset.date ? { date: el.dataset.date } : {}),
+    'cal-mode': (el) => { ui.calMode[el.dataset.kind] = el.dataset.mode; render(); },
+    'cal-pick': (el) => { const k = el.dataset.kind, mx = calMax(k); let d = el.dataset.date; if (mx && d > mx) d = mx; ui[calDateKey[k]] = d; render(); },
+    'cal-nav': (el) => {
+      const k = el.dataset.kind, key = calDateKey[k], n = +el.dataset.delta, mode = ui.calMode[k], mx = calMax(k);
+      let d = mode === 'month' ? addMonths(ui[key], n) : addDays(ui[key], mode === 'week' ? 7 * n : n);
+      if (mx && d > mx) d = mx;
+      ui[key] = d; render();
+    },
     'health-import': () => healthImportForm(),
     'repeat-workout': (el) => { const w = find('workouts', el.dataset.id); workoutForm({ ...w, id: undefined, date: todayISO(), notes: '' }); },
     'lift-chart': (el) => liftChart(el.dataset.key),
@@ -1294,7 +1370,7 @@
   });
 
   // Actions allowed while a coach views a client's app (navigation only)
-  const VIEW_OK = new Set(['goto', 'food-day', 'body-seg', 'goal-seg', 'review-week', 'lift-chart', 'view-session', 'plan-guide', 'pick-photo', 'clear-compare', 'exit-view-as', 'timer-stop']);
+  const VIEW_OK = new Set(['goto', 'food-day', 'cal-mode', 'cal-pick', 'cal-nav', 'body-seg', 'goal-seg', 'review-week', 'lift-chart', 'view-session', 'plan-guide', 'pick-photo', 'clear-compare', 'exit-view-as', 'timer-stop']);
   function enterViewAs(state, name) {
     ui.viewAs = { name, realS: S, realTab: ui.tab };
     S = state;

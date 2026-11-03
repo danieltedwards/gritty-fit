@@ -24,9 +24,10 @@
         // automatically (same start date; history follows the exercise ids).
         const me = Cloud.user && Cloud.user.id;
         const st = S();
-        if (!isCoach && me && st.program) {
-          const mine = vis.find((r) => r.data.forClient === me && r.data.basedOn === st.program.planId);
-          if (mine) { st.program = { ...st.program, planId: mine.id }; C.save(); C.toast('Your coach customized your plan ✨'); }
+        if (!isCoach && me && progs().length) {
+          let changed = false;
+          setProgs(progs().map((pr) => { const mine = vis.find((r) => r.data.forClient === me && r.data.basedOn === pr.planId); if (mine) { changed = true; return { ...pr, planId: mine.id }; } return pr; }));
+          if (changed) { C.save(); C.toast('Your coach customized your plan ✨'); }
         }
         const list = vis.filter((r) => !(isCoach && r.data.forClient)); // coach's own picker: templates only
         if (!list.length && isCoach) return staticIndex(); // coach hasn't added plans yet
@@ -59,6 +60,18 @@
     loadPlan(id).then(() => C.render()).catch(() => {});
     return undefined;
   }
+
+  // ---------- active programs (a client can run up to 3 plans at once; programs[0] is the primary) ----------
+  const MAX_PLANS = 3;
+  function progs() {
+    const st = S();
+    if (!Array.isArray(st.programs)) st.programs = st.program ? [st.program] : [];
+    if (st.program && !st.programs.some((p) => p.planId === st.program.planId)) st.programs.unshift(st.program);
+    if (!st.program && st.programs.length) st.program = st.programs[0];
+    return st.programs;
+  }
+  function setProgs(arr) { const st = S(); st.programs = arr.slice(0, MAX_PLANS); st.program = st.programs[0] || null; }
+  const progFor = (planId) => progs().find((p) => p.planId === planId) || null;
 
   // ---------- helpers ----------
   const S = () => C.getState();
@@ -181,13 +194,51 @@
     const core = plan.days.filter((d) => !d.optional);
     return core.find((d) => !done.has(d.id)) || plan.days.find((d) => d.optional && !done.has(d.id)) || null;
   }
+  // ---------- calendar: which plan sessions fall on a date ----------
+  // Plans number their days (Day 1, Day 2…) rather than fixing weekdays, so the calendar spreads a week's
+  // sessions over a sensible default pattern from the plan's week start. In the current week the sessions
+  // still to do are laid out from today onward, so the calendar always shows what's next.
+  const SLOTS = { 1: [0], 2: [0, 3], 3: [0, 2, 4], 4: [0, 1, 3, 4], 5: [0, 1, 2, 3, 4], 6: [0, 1, 2, 3, 4, 5], 7: [0, 1, 2, 3, 4, 5, 6] };
+  function plannedOn(iso) {
+    const t = C.todayISO();
+    if (iso < t) return [];
+    const out = [];
+    progs().forEach((prog) => {
+      const plan = planNow(prog.planId);
+      if (!plan) return;
+      const wk = programWeek(prog, plan, iso);
+      if (wk.before || wk.done) return;
+      const wplan = atWeek(plan, wk.week);
+      const core = wplan.days.filter((d) => !d.optional);
+      if (!core.length) return;
+      const slots = SLOTS[Math.min(core.length, 7)];
+      const off = C.daysBetween(wk.weekStart, iso);
+      let day = null;
+      if (t >= wk.weekStart && t <= wk.weekEnd) {
+        const doneW = sessionsThisProgramWeek(prog, wk), done = new Set(doneW.map((w) => w.dayId));
+        const left = core.filter((d) => !done.has(d.id));
+        const tOff = C.daysBetween(wk.weekStart, t) + (doneW.some((w) => w.date === t) ? 1 : 0);
+        let free = slots.filter((o) => o >= tOff);
+        if (free.length < left.length) free = Array.from({ length: 7 - tOff }, (_, i) => tOff + i);
+        const i = free.indexOf(off);
+        if (i >= 0 && i < left.length) day = left[i];
+        else if (free.length && off === free[free.length - 1] && left.length > free.length) day = left[free.length - 1];
+      } else {
+        const i = slots.indexOf(off);
+        if (i >= 0) day = core[i];
+      }
+      if (day) out.push({ plan, prog, day, week: wk.week, guide: wk.guide });
+    });
+    return out;
+  }
+
   const CARDIO_RE = /stair|ruck|incline|hik|walk|run|cycl|bike|elliptical|row(ing|er)|swim|cardio|treadmill/i;
   const isCardio = (w) => w.cardio || (!w.sets && CARDIO_RE.test(w.type || ''));
 
   // ---------- Train tab: program card ----------
   function trainCard() {
     const st = S();
-    const prog = st.program;
+    const list = progs();
     const as = st.activeSession;
     let h = '';
     if (as) {
@@ -195,10 +246,15 @@
         <div class="sub">${esc(as.dayLabel)} · ${esc(as.dayName)} · started ${new Date(as.startedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</div></div>
         <button class="btn primary" data-action="session-open">Resume</button></div></div>`;
     }
-    if (!prog) {
+    if (!list.length) {
       return h + `<div class="card"><div class="card-head"><h2>Your program</h2></div><p class="sub" style="margin-top:0">Pick a training plan from your coach. Every session is laid out set by set, with your last numbers and when to add weight.</p>
         <button class="btn primary block" data-action="plans-open">Choose a plan</button></div>`;
     }
+    return h + list.map((prog, i) => programCard(prog, i, list.length)).join('');
+  }
+  function programCard(prog, idx, n) {
+    const st = S(), as = st.activeSession;
+    let h = '';
     const plan = planNow(prog.planId);
     if (plan === undefined) return h + '<div class="card"><div class="empty">Loading your plan…</div></div>';
     if (!plan) return h;
@@ -207,23 +263,24 @@
     const doneIds = new Set(sessionsThisProgramWeek(prog, wk).map((w) => w.dayId));
     const nd = nextDay(pw, prog, wk);
     const cardioDone = st.workouts.filter((w) => isCardio(w) && w.date >= wk.weekStart && w.date <= wk.weekEnd).length;
-    h += `<div class="card"><div class="card-head"><h2>Your program</h2><span class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn small" data-action="plans-open">Plans</button><button class="btn small" data-action="plan-guide" data-id="${esc(plan.id)}">Guide</button></span></div>
+    const P = `data-plan="${esc(plan.id)}"`;
+    h += `<div class="card"><div class="card-head"><h2>${n > 1 ? `Program ${idx + 1} of ${n}` : 'Your program'}</h2><span class="row" style="gap:6px;flex-wrap:nowrap">${idx === 0 ? '<button class="btn small" data-action="plans-open">Plans</button>' : ''}<button class="btn small" data-action="plan-guide" data-id="${esc(plan.id)}">Guide</button></span></div>
       <div style="font-weight:800;font-size:18px;line-height:1.2">${esc(plan.name)}</div><div class="sub">${esc(plan.phase || '')}</div>
       ${wk.before ? `<p class="sub">Starts ${C.prettyDate(prog.startDate)}.</p>` : wk.done ? `<p><strong>Program complete 🎉</strong> <span class="sub">Talk to your coach about the next phase.</span></p>` : `
       <div class="week-pill">Week ${wk.week} of ${plan.weeks}${wk.blocks > 1 ? ` · Block ${wk.block}` : ''}${wk.guide ? ` · ${esc(wk.guide.label)}` : ''}</div>
       ${wk.guide ? `<p class="sub" style="margin:6px 0 0"><strong>${esc(wk.guide.effort)}</strong>. ${esc(wk.guide.note || '')}</p>` : ''}`}
-      <div class="days">${pw.days.map((d) => `<button class="day ${doneIds.has(d.id) ? 'done' : ''} ${nd && nd.id === d.id ? 'next' : ''}" data-action="session-start" data-day="${d.id}">
+      <div class="days">${pw.days.map((d) => `<button class="day ${doneIds.has(d.id) ? 'done' : ''} ${nd && nd.id === d.id ? 'next' : ''}" data-action="session-start" data-day="${d.id}" ${P}>
         <span class="day-label">${esc(d.label)}${d.optional ? ' · optional' : ''}</span><span class="day-name">${esc(d.name)}</span><span class="day-state">${doneIds.has(d.id) ? '✓ Done' : nd && nd.id === d.id ? 'Up next' : ''}</span></button>`).join('')}</div>
       ${maxesRow(plan)}
-      ${!as && nd && !wk.done ? `<button class="btn primary block" data-action="session-start" data-day="${nd.id}" style="margin-top:10px">Start ${esc(nd.label)}: ${esc(nd.name)}</button>` : ''}
+      ${!as && nd && !wk.done ? `<button class="btn primary block" data-action="session-start" data-day="${nd.id}" ${P} style="margin-top:10px">Start ${esc(nd.label)}: ${esc(nd.name)}</button>` : ''}
       ${!nd && !wk.done && !wk.before ? '<p class="sub">All sessions done this week. Recover well 💪</p>' : ''}
       ${plan.cardio ? `<div class="row" style="justify-content:space-between;margin-top:12px;flex-wrap:nowrap"><div><strong>Cardio</strong> <span class="sub">${cardioDone} / ${plan.cardio.perWeek.join('–')} this week · ${plan.cardio.minutes.join('–')} min</span></div>
-        <button class="btn small" data-action="log-cardio" style="flex:none">+ Cardio</button></div>
+        <button class="btn small" data-action="log-cardio" ${P} style="flex:none">+ Cardio</button></div>
         <div class="progress"><i style="width:${Math.min(100, (cardioDone / plan.cardio.perWeek[0]) * 100)}%"></i></div>` : ''}
       ${(plan.extras || []).map((x) => {
         const n = st.workouts.filter((w) => w.extraId === x.id && w.date >= wk.weekStart && w.date <= wk.weekEnd).length;
         return `<div class="row" style="justify-content:space-between;margin-top:12px;flex-wrap:nowrap"><div><strong>${esc(x.name)}</strong> <span class="sub">${n} / ${x.perWeek || 1} this week${x.minutes ? ' · ' + x.minutes + ' min' : ''}</span>${x.notes ? `<div class="sub" style="font-size:12px">${esc(x.notes)}</div>` : ''}</div>
-          <button class="btn small" data-action="log-extra" data-id="${esc(x.id)}" style="flex:none">+ Log</button></div>
+          <button class="btn small" data-action="log-extra" data-id="${esc(x.id)}" ${P} style="flex:none">+ Log</button></div>
           <div class="progress"><i style="width:${Math.min(100, (n / (x.perWeek || 1)) * 100)}%"></i></div>`;
       }).join('')}
     </div>`;
@@ -245,32 +302,33 @@
   function todayCard() {
     const st = S();
     if (st.activeSession) return `<div class="card" style="border-color:var(--accent)"><div class="row" style="flex-wrap:nowrap"><div style="flex:1"><strong>🏋️ Workout in progress</strong><div class="sub">${esc(st.activeSession.dayName)}</div></div><button class="btn primary" data-action="session-open">Resume</button></div></div>`;
-    const prog = st.program;
-    if (!prog) return '';
-    const plan = planNow(prog.planId);
-    if (!plan) return '';
-    const wk = programWeek(prog, plan);
-    if (wk.before || wk.done) return '';
-    const nd = nextDay(atWeek(plan, wk.week), prog, wk);
-    const doneToday = st.workouts.some((w) => w.planId === prog.planId && w.date === C.todayISO() && w.sets);
-    return `<div class="card"><div class="card-head"><h2>Training · Week ${wk.week}</h2><span class="sub">${wk.guide ? esc(wk.guide.effort) : ''}</span></div>
-      ${doneToday ? '<p style="margin:0 0 8px">✓ Trained today. Nice work.</p>' : ''}
-      ${nd ? `<div class="row" style="flex-wrap:nowrap"><div style="flex:1"><div class="sub">${doneToday ? 'Next' : 'Up next'}</div><strong>${esc(nd.label)}: ${esc(nd.name)}</strong></div>
-        <button class="btn ${doneToday ? '' : 'primary'}" data-action="session-start" data-day="${nd.id}">Start</button></div>` : '<p class="sub" style="margin:0">All sessions done this week 💪</p>'}</div>`;
+    const rows = progs().map((prog) => {
+      const plan = planNow(prog.planId);
+      if (!plan) return '';
+      const wk = programWeek(prog, plan);
+      if (wk.before || wk.done) return '';
+      const nd = nextDay(atWeek(plan, wk.week), prog, wk);
+      const doneToday = st.workouts.some((w) => w.planId === prog.planId && w.date === C.todayISO() && w.sets);
+      return `<div class="row today-plan" style="flex-wrap:nowrap"><div style="flex:1;min-width:0"><div class="sub">${esc(plan.name)} · Week ${wk.week}${doneToday ? ' · ✓ trained today' : ''}</div>
+          ${nd ? `<strong>${esc(nd.label)}: ${esc(nd.name)}</strong>` : '<span class="sub">All sessions done this week 💪</span>'}</div>
+        ${nd ? `<button class="btn ${doneToday ? '' : 'primary'}" data-action="session-start" data-day="${nd.id}" data-plan="${esc(plan.id)}" style="flex:none">Start</button>` : ''}</div>`;
+    }).filter(Boolean);
+    if (!rows.length) return '';
+    return `<div class="card"><div class="card-head"><h2>Training</h2></div>${rows.join('')}</div>`;
   }
 
   // ---------- plan library ----------
   function viewPlans() {
     if (!planIndex) { loadIndex().then(() => C.render()).catch((e) => C.toast('Couldn\'t load plans: ' + e.message)); return '<div class="empty">Loading plans…</div>'; }
-    const cur = S().program;
-    let h = '<p class="sub" style="margin-top:0">Choose the program you want to run. You can switch later; your history stays.</p>';
+    const active = new Set(progs().map((p) => p.planId)), full = active.size >= MAX_PLANS;
+    let h = `<p class="sub" style="margin-top:0">Run up to ${MAX_PLANS} plans at once (for example a lifting plan plus a conditioning or mobility plan). ${active.size ? `You're running ${active.size} of ${MAX_PLANS}.` : ''} Your history stays when you stop a plan.</p>`;
     if (!planIndex.length) h += '<div class="card"><div class="empty">Your coach hasn\'t made any plans available to you yet.</div></div>';
     h += planIndex.map((p) => `<div class="card" ${p.forMe ? 'style="border-color:var(--accent)"' : ''}>${p.forMe ? '<div class="week-pill" style="margin:0 0 8px">✨ Made for you</div>' : ''}<div style="font-weight:800;font-size:18px">${esc(p.name)}</div><div class="sub">${esc(p.phase || '')}</div>
       <p class="sub" style="margin:8px 0">${esc(p.summary || '')}</p>
       <div style="margin-bottom:10px">${[`${p.weeks} weeks`, p.daysPerWeek ? p.daysPerWeek + ' days/week' : '', ...(p.tags || [])].filter(Boolean).map((t) => `<span class="chip">${esc(t)}</span>`).join('')}</div>
       <div class="row"><button class="btn" data-action="plan-guide" data-id="${esc(p.id)}">View plan</button>
-      ${cur && cur.planId === p.id ? '<button class="btn" disabled>✓ Current plan</button>' : `<button class="btn primary" data-action="plan-choose" data-id="${esc(p.id)}">Start this plan</button>`}</div></div>`).join('');
-    if (cur) h += '<button class="btn danger block" data-action="plan-leave">Stop following a plan</button>';
+      ${active.has(p.id) ? `<button class="btn" disabled>✓ Active</button><button class="btn danger" data-action="plan-leave" data-id="${esc(p.id)}">Stop</button>`
+        : full ? `<button class="btn" disabled>${MAX_PLANS} plans max</button>` : `<button class="btn primary" data-action="plan-choose" data-id="${esc(p.id)}">${active.size ? 'Add this plan' : 'Start this plan'}</button>`}</div></div>`).join('');
     return h;
   }
 
@@ -288,10 +346,10 @@
     const id = C.ui.guidePlan;
     const plan = planNow(id);
     if (!plan) return '<div class="empty">Loading plan…</div>';
-    const cur = S().program;
+    const cur = progFor(plan.id);
     let h = `<div class="card"><div style="font-weight:800;font-size:20px;line-height:1.2">${esc(plan.name)}</div><div class="sub">${esc(plan.phase || '')}${plan.subtitle ? ' · ' + esc(plan.subtitle) : ''}</div>
       ${plan.coach ? `<div class="sub" style="margin-top:4px">Coach: ${esc(plan.coach)}</div>` : ''}<p>${esc(plan.summary || '')}</p>
-      ${cur && cur.planId === plan.id ? '' : `<button class="btn primary block" data-action="plan-choose" data-id="${esc(plan.id)}">Start this plan</button>`}</div>`;
+      ${cur ? '' : progs().length >= MAX_PLANS ? `<p class="sub">You're running ${MAX_PLANS} plans. Stop one to add this.</p>` : `<button class="btn primary block" data-action="plan-choose" data-id="${esc(plan.id)}">${progs().length ? 'Add this plan' : 'Start this plan'}</button>`}</div>`;
     if (plan.weekGuide) h += `<div class="card"><div class="card-head"><h2>Week by week</h2></div><table class="tbl"><tbody>${plan.weekGuide.map((g) => `<tr><td style="white-space:nowrap"><strong>Wk ${g.weeks.length > 1 ? g.weeks[0] + '–' + g.weeks[g.weeks.length - 1] : g.weeks[0]}</strong></td><td><strong>${esc(g.label)}</strong><br><span class="sub">${esc(g.effort)}</span></td></tr>`).join('')}</tbody></table>
       ${plan.blocksNote ? `<p class="sub">${esc(plan.blocksNote)}</p>` : plan.cycleWeeks && plan.weeks > plan.cycleWeeks ? `<p class="sub">The ${plan.cycleWeeks}-week block repeats through week ${plan.weeks}.</p>` : ''}
       ${plan.progression && plan.progression.kettlebell ? '<p class="sub">Progress by reps, tempo and rest, then move up a bell size.</p>' : plan.progression && plan.progression.loadJumps ? `<p class="sub">Load jumps: lower body ${esc(plan.progression.loadJumps.lower)}, upper body ${esc(plan.progression.loadJumps.upper)}.</p>` : ''}</div>`;
@@ -303,7 +361,7 @@
     let gDays = plan.days;
     if (plan.schedule && plan.schedule.length) {
       const nW = plan.weeks || Math.max(...plan.schedule.flatMap((x) => x.weeks || [1]));
-      const curW = cur && cur.planId === plan.id ? programWeek(cur, plan).week : 1;
+      const curW = cur ? programWeek(cur, plan).week : 1;
       const gw = Math.min(Math.max(C.ui.guideWeek || curW, 1), nW);
       gDays = daysAt(plan, gw);
       h += `<div class="card"><div class="card-head"><h2>Week ${gw}</h2><span class="sub">changes week to week</span></div>
@@ -320,9 +378,9 @@
   }
 
   // ---------- session logger ----------
-  function startSession(dayId) {
+  function startSession(dayId, planId) {
     const st = S();
-    const prog = st.program, plan = planCache.get(prog && prog.planId);
+    const prog = progFor(planId) || progs()[0], plan = planCache.get(prog && prog.planId);
     if (!plan) { C.toast('Plan still loading, try again'); return; }
     if (st.activeSession) {
       if (st.activeSession.dayId === dayId) { openSession(); return; }
@@ -388,7 +446,7 @@
     if (!as) return '<div class="card"><div class="empty">No workout in progress.</div><button class="btn block" data-action="goto" data-tab="train">Back to Training</button></div>';
     const plan = planNow(as.planId);
     if (!plan) return '<div class="empty">Loading plan…</div>';
-    const wk = programWeek(st.program && st.program.planId === plan.id ? st.program : { startDate: as.date }, plan, as.date);
+    const wk = programWeek(progFor(plan.id) || { startDate: as.date }, plan, as.date);
     wk.kb = !!(plan.progression && plan.progression.kettlebell);
     const day = daysAt(plan, as.week || wk.week).find((d) => d.id === as.dayId) || plan.days.find((d) => d.id === as.dayId);
     if (!day) return '<div class="card"><div class="empty">This workout\'s day was removed from the plan.</div><button class="btn danger block" data-action="session-discard">Discard</button></div>';
@@ -522,7 +580,7 @@
   }
   const actions = {
     'plans-open': () => C.setTab('plans'),
-    'plan-guide': (el) => { C.ui.guidePlan = el.dataset.id; C.ui.guideWeek = null; C.setTab('guide'); },
+    'plan-guide': (el) => { C.ui.guidePlan = el.dataset.id; C.ui.guideWeek = el.dataset.week ? +el.dataset.week : null; C.setTab('guide'); },
     'guide-week': (el) => { C.ui.guideWeek = Number(el.dataset.w); C.render(); },
     'plan-choose': async (el) => {
       const plan = await loadPlan(el.dataset.id).catch(() => null);
@@ -532,8 +590,9 @@
         ${C.field('Week 1 starts', `<select name="start"><option value="${t}">Today, ${C.prettyDate(t)}</option><option value="${C.weekStart(t)}">This Monday, ${C.prettyDate(C.weekStart(t))}</option><option value="${C.addDays(C.weekStart(t), 7)}">Next Monday, ${C.prettyDate(C.addDays(C.weekStart(t), 7))}</option></select>`)}
         <p class="hint">Week numbers, effort targets and the deload week are counted from this date.</p>`, (fd) => {
         const st = S();
-        if (st.program) (st.programHistory || (st.programHistory = [])).push({ ...st.program, endDate: C.todayISO() });
-        st.program = { planId: plan.id, startDate: fd.get('start') };
+        const list = progs().filter((p) => p.planId !== plan.id);
+        if (list.length >= MAX_PLANS) { C.toast(`You can run up to ${MAX_PLANS} plans. Stop one first.`); return; }
+        setProgs([...list, { planId: plan.id, startDate: fd.get('start') }]);
         C.save(); C.toast(`Started ${plan.name}`);
         setTimeout(() => C.setTab('train'), 0);
       }, { saveLabel: 'Start plan' });
@@ -550,16 +609,18 @@
         C.save(); C.toast('Maxes saved'); C.render();
       }, { saveLabel: 'Save maxes' });
     },
-    'plan-leave': () => {
-      if (!confirm('Stop following this plan? Your logged workouts are kept.')) return;
-      const st = S();
-      (st.programHistory || (st.programHistory = [])).push({ ...st.program, endDate: C.todayISO() });
-      st.program = null; C.save(); C.setTab('train');
+    'plan-leave': (el) => {
+      const st = S(), id = el.dataset.id || (progs()[0] && progs()[0].planId), pr = progFor(id);
+      if (!pr) return;
+      const nm = (planNow(id) || {}).name;
+      if (!confirm(`Stop following ${nm || 'this plan'}? Your logged workouts are kept.`)) return;
+      (st.programHistory || (st.programHistory = [])).push({ ...pr, endDate: C.todayISO() });
+      setProgs(progs().filter((p) => p.planId !== id)); C.save(); C.render();
     },
     'session-start': (el) => {
-      const st = S();
-      if (!st.program) return;
-      loadPlan(st.program.planId).then(() => startSession(el.dataset.day)).catch(() => C.toast('Couldn\'t load the plan'));
+      const pr = progFor(el.dataset.plan) || progs()[0];
+      if (!pr) return;
+      loadPlan(pr.planId).then(() => startSession(el.dataset.day, pr.planId)).catch(() => C.toast('Couldn\'t load the plan'));
     },
     'session-open': openSession,
     'set-done': (el) => {
@@ -595,8 +656,8 @@
     'session-discard': () => { if (confirm('Discard this workout? Logged sets will be lost.')) { S().activeSession = null; stopTimer(); C.save(); C.setTab('train'); } },
     'timer-add': () => { if (timer) timer.end += 15000; },
     'timer-stop': stopTimer,
-    'log-cardio': () => {
-      const st = S(), plan = st.program && planCache.get(st.program.planId);
+    'log-cardio': (el) => {
+      const st = S(), pr = progFor(el.dataset.plan) || progs()[0], plan = pr && planCache.get(pr.planId);
       const opts = (plan && plan.cardio && plan.cardio.options) || ['Incline Walking', 'StairMaster', 'Cycling', 'Running'];
       C.openModal(`<h2>Log cardio</h2>${C.field('Type', `<select name="type">${opts.map((o) => `<option>${esc(o)}</option>`).join('')}<option>Other</option></select>`)}
         <div class="fields-2">${C.field('Minutes', C.inNum('minutes', (plan && plan.cardio && plan.cardio.minutes[0]) || 30, 'min="1" required'))}${C.field('Date', `<input type="date" name="date" value="${C.todayISO()}" required>`)}</div>
@@ -606,7 +667,7 @@
       });
     },
     'log-extra': (el) => {
-      const st = S(), plan = st.program && planCache.get(st.program.planId);
+      const st = S(), pr = progFor(el.dataset.plan) || progs()[0], plan = pr && planCache.get(pr.planId);
       const x = plan && (plan.extras || []).find((e) => e.id === el.dataset.id);
       if (!x) return;
       C.openModal(`<h2>Log ${esc(x.name)}</h2>
@@ -666,8 +727,9 @@
       document.addEventListener('input', onInput);
     },
     afterRender(tab) { if (tab === 'session') sessionClock(); },
-    preload() { const p = S().program; if (p) loadPlan(p.planId).then(() => C.render()).catch(() => {}); },
-    resetPlans() { planIndex = null; indexPromise = null; planCache.clear(); const p = S().program; if (p) loadPlan(p.planId).then(() => C.softRender ? C.softRender() : C.render()).catch(() => {}); },
+    preload() { progs().forEach((p) => loadPlan(p.planId).then(() => C.render()).catch(() => {})); },
+    resetPlans() { planIndex = null; indexPromise = null; planCache.clear(); progs().forEach((p) => loadPlan(p.planId).then(() => C.softRender ? C.softRender() : C.render()).catch(() => {})); },
+    progs, planNow: (id) => planNow(id), loadPlan, plannedOn,
     trainCard, todayCard, summary, isCardio, renderBody,
     cachePlan(id, data) { planCache.set(id, data); },
     daysAt, MAX_KEYS, pctText,

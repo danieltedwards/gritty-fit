@@ -21,7 +21,7 @@
     Object.entries(st.habitLog || {}).forEach(([d, ids]) => { if (ids && ids.length) m.set('habitday/' + d, { kind: 'habitday', id: d, data: { ids } }); });
     Object.entries(st.health || {}).forEach(([d, v]) => m.set('health/' + d, { kind: 'health', id: d, data: v }));
     m.set('settings/main', { kind: 'settings', id: 'main', data: st.settings });
-    m.set('program/main', { kind: 'program', id: 'main', data: { program: st.program || null, programHistory: st.programHistory || [] } });
+    m.set('program/main', { kind: 'program', id: 'main', data: { program: (st.programs && st.programs[0]) || st.program || null, programs: st.programs || (st.program ? [st.program] : []), programHistory: st.programHistory || [] } });
     if (st.nutrition) m.set('nutrition/main', { kind: 'nutrition', id: 'main', data: st.nutrition });
     Object.entries(st.sharedPhotos || {}).forEach(([id, v]) => m.set('photo/' + id, { kind: 'photo', id, data: v }));
     return m;
@@ -44,7 +44,7 @@
       st.sharedPhotos = st.sharedPhotos || {};
       if (deleted) delete st.sharedPhotos[id]; else st.sharedPhotos[id] = data;
     } else if (kind === 'program' && !deleted && data) {
-      st.program = data.program || null; st.programHistory = data.programHistory || [];
+      st.programs = Array.isArray(data.programs) ? data.programs.slice(0, 3) : (data.program ? [data.program] : []); st.program = st.programs[0] || null; st.programHistory = data.programHistory || [];
     }
   }
   const J = (x) => JSON.stringify(x === undefined ? null : x);

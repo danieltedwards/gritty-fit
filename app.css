@@ -397,3 +397,26 @@ a.btn { text-decoration: none; }
 .day-instr p { margin: 0 0 4px; }
 .ex-guide-note { margin-top: 2px; white-space: normal; }
 .ed-allweeks { gap: 10px; margin: -4px 0 8px; font-size: 13px; align-items: center; }
+.today-plan { padding: 8px 0; gap: 10px; }
+.today-plan + .today-plan { border-top: 1px solid var(--line, rgba(127,127,127,.2)); }
+/* calendar */
+.cal { padding-bottom: 10px; }
+.cal .cal-seg { margin-bottom: 10px; }
+.cal .daynav { margin-bottom: 8px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-dow { text-align: center; font-size: 11px; font-weight: 700; color: var(--muted); padding-bottom: 2px; }
+.cal-day { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 2px; min-height: 46px; padding: 5px 0 4px; border: 1px solid transparent; border-radius: 10px; background: var(--surface-2); color: var(--text); font: inherit; cursor: pointer; min-width: 0; }
+.cal-day:disabled { opacity: .35; cursor: default; }
+.cal-day.faded { opacity: .45; }
+.cal-day.today .cal-n { color: var(--accent); font-weight: 800; }
+.cal-day.sel { border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 1px var(--accent) inset; }
+.cal-n { font-size: 14px; font-weight: 650; line-height: 1.1; }
+.cal-m { font-size: 10px; font-weight: 700; line-height: 1.2; min-height: 12px; color: var(--muted); display: flex; gap: 2px; align-items: center; }
+.cal-m.good { color: var(--good, #1a9b5b); }
+.cal-m.bad { color: var(--warn); }
+.cal-m .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+.cal-m .dot.done { background: var(--accent); }
+.cal-m .dot.plan { border: 1.5px solid var(--accent); box-sizing: border-box; }
+.cal-sel { margin-top: 10px; font-size: 13px; font-weight: 650; color: var(--muted); display: flex; justify-content: space-between; }
+.entry.planned { border-left: 3px solid var(--accent); padding-left: 10px; }
+.wod-link { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); color: var(--text); text-decoration: none; }
