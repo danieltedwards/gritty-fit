@@ -113,7 +113,7 @@
     const u = unit();
     if (wk && wk.newBlock && last && last.sets.length && !ex.bodyweight && ex.role !== 'core') {
       const top = Math.max(...last.sets.map((s) => s.weight || 0));
-      if (top) return `New block 💪 Start heavier than block 1: try ${top + bumpFor(ex)} ${u} (your best before the deload was ${top}).`;
+      if (top) return wk.kb ? `New block 💪 Try the next bell size up from ${top} ${u}.` : `New block 💪 Start heavier than block 1: try ${top + bumpFor(ex)} ${u} (your best before the deload was ${top}).`;
     }
     if (wk && wk.guide && wk.guide.deload) {
       const top = last && Math.max(...last.sets.map((s) => s.weight || 0));
@@ -133,10 +133,11 @@
     if (rr && top && avgReps > 0 && avgReps <= rr.min - 3) return `More reps today (${ex.reps} vs ${Math.round(avgReps)} last time): go lighter than ${top} ${u}.`;
     const sameWeight = weights.every((x) => x === top);
     if (rr && sameWeight && last.sets.length >= ex.sets && last.sets.every((s) => (s.reps || 0) >= rr.max)) {
+      if (wk && wk.kb) return `✅ All sets hit ${rr.max} last time. Move up a bell size, or keep the ${top} ${u} bells and lower slower (4 sec) or cut rest by 30 sec.`;
       const bump = bumpFor(ex);
       return `✅ All sets hit ${rr.max} last time. Add weight: try ${top + bump} ${u} and restart at ${rr.min} reps.`;
     }
-    if (rr) return `Stay at ${top} ${u}. Goal: more reps until every set reaches ${rr.max}.`;
+    if (rr) return wk && wk.kb ? `Stay with the ${top} ${u} bells. Goal: more reps until every set reaches ${rr.max}.` : `Stay at ${top} ${u}. Goal: more reps until every set reaches ${rr.max}.`;
     return '';
   }
 
@@ -252,7 +253,7 @@
       ${cur && cur.planId === plan.id ? '' : `<button class="btn primary block" data-action="plan-choose" data-id="${esc(plan.id)}">Start this plan</button>`}</div>`;
     if (plan.weekGuide) h += `<div class="card"><div class="card-head"><h2>Week by week</h2></div><table class="tbl"><tbody>${plan.weekGuide.map((g) => `<tr><td style="white-space:nowrap"><strong>Wk ${g.weeks.length > 1 ? g.weeks[0] + '–' + g.weeks[g.weeks.length - 1] : g.weeks[0]}</strong></td><td><strong>${esc(g.label)}</strong><br><span class="sub">${esc(g.effort)}</span></td></tr>`).join('')}</tbody></table>
       ${plan.blocksNote ? `<p class="sub">${esc(plan.blocksNote)}</p>` : plan.cycleWeeks && plan.weeks > plan.cycleWeeks ? `<p class="sub">The ${plan.cycleWeeks}-week block repeats through week ${plan.weeks}.</p>` : ''}
-      ${plan.progression && plan.progression.loadJumps ? `<p class="sub">Load jumps: lower body ${esc(plan.progression.loadJumps.lower)}, upper body ${esc(plan.progression.loadJumps.upper)}.</p>` : ''}</div>`;
+      ${plan.progression && plan.progression.kettlebell ? '<p class="sub">Progress by reps, tempo and rest, then move up a bell size.</p>' : plan.progression && plan.progression.loadJumps ? `<p class="sub">Load jumps: lower body ${esc(plan.progression.loadJumps.lower)}, upper body ${esc(plan.progression.loadJumps.upper)}.</p>` : ''}</div>`;
     if ((plan.extras && plan.extras.length) || plan.cardio) {
       h += `<div class="card"><div class="card-head"><h2>Each week</h2></div><ul class="list">
         ${plan.cardio ? `<li><div class="grow"><div class="title">Cardio</div><div class="meta">${esc((plan.cardio.options || []).join(', '))}</div></div><span class="num">${plan.cardio.perWeek.join('–')}× · ${plan.cardio.minutes.join('–')} min</span></li>` : ''}
@@ -338,6 +339,7 @@
     const plan = planNow(as.planId);
     if (!plan) return '<div class="empty">Loading plan…</div>';
     const wk = programWeek(st.program && st.program.planId === plan.id ? st.program : { startDate: as.date }, plan, as.date);
+    wk.kb = !!(plan.progression && plan.progression.kettlebell);
     const day = daysAt(plan, as.week || wk.week).find((d) => d.id === as.dayId) || plan.days.find((d) => d.id === as.dayId);
     if (!day) return '<div class="card"><div class="empty">This workout\'s day was removed from the plan.</div><button class="btn danger block" data-action="session-discard">Discard</button></div>';
     let h = `<div class="card session-head"><div class="sub">${esc(day.label)} · Week ${wk.week}${wk.guide ? ' · ' + esc(wk.guide.label) : ''}</div>

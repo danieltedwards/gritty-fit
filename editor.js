@@ -114,7 +114,8 @@
       ${lab('Blocks note', inp('blocksNote', d.blocksNote, { type: 'textarea', rows: 2, ph: 'Block 2 repeats with heavier loads…' }))}
       ${lab('Days per week (label)', inp('daysPerWeek', d.daysPerWeek, { ph: '4 + 1 optional' }))}
       ${lab('Tags (comma separated)', inp('tags', (d.tags || []).join(', '), { kind: 'list' }))}
-      <p class="hint">Load jumps when a lift progresses: lower body ${esc((d.progression && d.progression.loadJumps && d.progression.loadJumps.lower) || '+10 lb')}, upper body ${esc((d.progression && d.progression.loadJumps && d.progression.loadJumps.upper) || '+5 lb')}.</p>`);
+      ${inp('progression.kettlebell', d.progression && d.progression.kettlebell, { type: 'check', label: 'Kettlebell plan: progress by reps, tempo and rest, then a bigger bell' })}
+      <p class="hint">Load jumps when a lift progresses (barbell/dumbbell plans): lower body ${esc((d.progression && d.progression.loadJumps && d.progression.loadJumps.lower) || '+10 lb')}, upper body ${esc((d.progression && d.progression.loadJumps && d.progression.loadJumps.upper) || '+5 lb')}.</p>`);
     h += details('weeks', `<strong>Week-by-week guide</strong> <span class="sub">${(d.weekGuide || []).length} phases</span>`,
       (d.weekGuide || []).map((g, i) => `<div class="ed-row"><div class="ed-grid2">${lab('Weeks', inp(`weekGuide.${i}.weeks`, weeksToText(g.weeks), { kind: 'weeks', ph: '1-2' }))}${lab('Label', inp(`weekGuide.${i}.label`, g.label, { ph: 'Movement quality' }))}</div>
         ${lab('Effort', inp(`weekGuide.${i}.effort`, g.effort, { ph: 'Main lifts 2–3 RIR' }))}${lab('Note', inp(`weekGuide.${i}.note`, g.note, { type: 'textarea', rows: 2 }))}

@@ -22,6 +22,7 @@ written in the app and stored online; this file format stays the same.)
 | `role` | `main`, `accessory`, `isolation` or `core`; drives progression hints (double progression from the rep range) |
 | `schedule[]` | Optional, for plans that change week to week: `[{weeks:[1,2], days:[...]}]`. The client sees the days for their current week; `days` should still hold week 1 (the template older app versions use). Keep day `id`s (d1, d2…) and exercise `id`s the same across weeks so "last time" numbers carry over |
 | `days[].instructions` | Optional free text shown on the day (conditioning options, intervals, recovery work), one paragraph per line |
+| `progression.kettlebell` | `true` for kettlebell plans: hints say to add reps, slow the tempo, cut rest, then move up a bell size instead of adding 5–10 lb |
 | `sections[]` | Coaching text shown in the plan guide: `{title, body: [{p}, {ul:[...]}, {table:{head, rows}}]}` |
 
 Exercise `id`s must be unique within a plan and should stay stable: a client's "last time" numbers
