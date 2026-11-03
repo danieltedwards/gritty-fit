@@ -95,9 +95,10 @@
       const ss = b.type === 'superset';
       body += `<div class="ed-block ${ss ? 'superset' : ''}"><div class="ed-block-head">
           ${inp(bp + '.type', b.type || 'single', { type: 'select', options: [['single', 'Straight sets'], ['superset', 'Superset / circuit']] })}
+          ${inp(bp + '.score', b.score || '', { type: 'select', options: [['', 'Scoring: auto'], ['sets', 'Log sets & reps'], ['time', 'For time'], ['rounds', 'AMRAP (rounds + reps)'], ['emom', 'EMOM (tick rounds)'], ['reps', 'Total reps / Tabata'], ['intervals', 'Time each set']] })}
           ${tools(bp, { up: bi > 0, down: bi < d.blocks.length - 1 })}</div>
         ${ss || b.name ? `<div class="ed-grid2">${lab('Block name', inp(bp + '.name', b.name, { ph: ss ? 'Block 1 — Mechanical Tension' : 'Core' }))}${ss ? lab('Rest after round', inp(bp + '.rest', b.rest, { ph: '60 sec' })) : ''}</div>` : ''}
-        ${ss ? lab('Block instructions', inp(bp + '.note', b.note, { ph: 'No rest between exercises…' })) : ''}
+        ${ss || b.score || b.note ? lab('Block instructions', inp(bp + '.note', b.note, { ph: ss ? 'No rest between exercises…' : 'AMRAP x 12 min · Score: rounds + reps' })) : ''}
         ${(b.exercises || []).map((ex, xi) => exerciseHTML(`${bp}.exercises.${xi}`, ex, xi, b.exercises.length, ss)).join('')}
         <button class="link-btn" data-action="ed-add" data-path="${bp}.exercises" data-kind="exercise">+ Exercise</button>
         ${!ss && !b.name ? `<button class="link-btn" data-action="ed-name-block" data-path="${bp}" style="margin-left:12px">+ Block name</button>` : ''}</div>`;
@@ -188,7 +189,7 @@
     ed().dirty = true;
     const flag = document.querySelector('.ed-top .sub'); if (flag) flag.textContent = 'Unsaved changes';
     // structural fields re-render so dependent inputs appear
-    if (/\.(type|freeform)$/.test(t.dataset.ed) && e.type === 'change') rerender();
+    if (/\.(type|freeform|score)$/.test(t.dataset.ed) && e.type === 'change') rerender();
   }
   function rememberOpen() {
     document.querySelectorAll('details.ed-sec').forEach((dt) => { if (dt.open) ed().open.add(dt.dataset.key); else ed().open.delete(dt.dataset.key); });

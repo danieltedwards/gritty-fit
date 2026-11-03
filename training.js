@@ -382,6 +382,161 @@
     return h;
   }
 
+  // ---------- conditioning pieces (metcons, AMRAP, for time, EMOM, Tabata) ----------
+  // A block is scored as a whole instead of set by set. The type comes from block.score when the plan
+  // sets it, otherwise it is worked out from the block's name and notes ("AMRAP x 12 min", "Score: Time"…).
+  const SCORE_LABEL = { time: 'For time', rounds: 'AMRAP', reps: 'Total reps', emom: 'EMOM', intervals: 'Time each set' };
+  const LOADED = /rx|@|\blb\b|\bkg\b|\bkb\b|\bdb\b|barbell|dumbbell|kettlebell|clean|snatch|jerk|press|squat|deadlift|thruster|swing|wall ?ball|slam|lunge|carry|sled|sandbag|\bdb row|barbell row/i;
+  function scoreInfo(b) {
+    const txt = `${b.name || ''} · ${b.note || ''} · ${b.fmt || ''}`.toLowerCase();
+    let type = b.score || null;
+    const sc = txt.match(/score:\s*([a-z +]+)/);
+    if (!type && sc) {
+      const v = sc[1];
+      type = /each set/.test(v) ? 'intervals' : /time/.test(v) ? 'time' : /round/.test(v) ? 'rounds' : /rep|cal|distance|meter/.test(v) ? 'reps' : /weight|load/.test(v) ? 'sets' : null;
+    }
+    if (!type) {
+      if (/amrap|as many rounds|as many reps/.test(txt)) type = 'rounds';
+      else if (/for time/.test(txt)) type = 'time';
+      else if (/tabata/.test(txt) || b.exercises.some((e) => /:20 on/.test(e.reps || ''))) type = 'reps';
+      else if (/\bemom\b|\be\dmom\b|every min(ute)? on the min|every\s+\d+(:\d\d)?\s*(min|x)|every \d+:\d\d/.test(txt)) type = 'emom';
+    }
+    // strength EMOMs (a % of max, or one loaded lift every minute) keep set-by-set logging so each round's weight is saved
+    if (type === 'emom' && (b.exercises.some((e) => e.pct || e.scheme) || (b.exercises.length === 1 && (b.exercises[0].role === 'main' || LOADED.test(b.exercises[0].name))))) type = 'sets';
+    type = type || 'sets';
+    let minutes = null, every = null, rounds = null, cap = null, m;
+    if ((m = txt.match(/amrap\s*(?:x\s*)?(\d+)/))) minutes = +m[1];
+    if ((m = txt.match(/\bemom\s*(?:x|·|-|for)?\s*(\d+)/) || txt.match(/every min(?:ute)? on the min(?:ute)?\s*(?:for|x)?\s*(\d+)/))) { every = 60; minutes = +m[1]; }
+    if ((m = txt.match(/\be(\d)mom\s*(?:x\s*)?(\d+)/))) { every = 60 * +m[1]; minutes = +m[2]; }
+    if ((m = txt.match(/every\s*(\d+):(\d\d)\s*(?:x|for)\s*(\d+)\s*(sets?|rounds?|min)/))) { every = +m[1] * 60 + +m[2]; if (/min/.test(m[4])) minutes = +m[3]; else rounds = +m[3]; }
+    if ((m = txt.match(/every\s*(\d+)\s*min(?:utes?)?\s*(?:x|for)\s*(\d+)\s*(sets?|rounds?|min)/))) { every = +m[1] * 60; if (/min/.test(m[3])) minutes = +m[2]; else rounds = +m[2]; }
+    if ((m = txt.match(/cap[:\s]*(\d+)(?::00)?/) || txt.match(/(\d+)\s*min(?:ute)?s?\s*cap/))) cap = +m[1];
+    if (/tabata/.test(txt) || b.exercises.some((e) => /:20 on/.test(e.reps || ''))) { every = 30; rounds = 8; minutes = 4; }
+    if (every && minutes && !rounds) rounds = Math.max(1, Math.round(minutes * 60 / every));
+    if (every && rounds && !minutes) minutes = Math.round(every * rounds / 60);
+    const maxSets = Math.max(1, ...b.exercises.map((e) => +e.sets || 1));
+    if ((type === 'emom' || type === 'intervals') && !rounds) rounds = maxSets;
+    if (type === 'time' && !cap && minutes) cap = minutes;
+    return { type, minutes, every, rounds, cap, roundsOf: type === 'time' || type === 'rounds' ? maxSets : 1 };
+  }
+  const blockSig = (b) => b.exercises.map((e) => e.name).join('|');
+  const fmtSec = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+  function scoreText(type, v, info) {
+    if (!v) return '';
+    const t = (mm, ss) => (mm || ss ? `${+mm || 0}:${String(+ss || 0).padStart(2, '0')}` : '');
+    if (type === 'time') return v.capped ? `Capped${v.rounds || v.reps ? ` · ${+v.rounds || 0} rounds + ${+v.reps || 0} reps` : ''}` : t(v.mm, v.ss);
+    if (type === 'rounds') return v.rounds != null || v.reps != null ? `${+v.rounds || 0} rounds + ${+v.reps || 0} reps` : '';
+    if (type === 'reps') return v.total != null ? `${v.total} ${info && info.every === 30 ? 'reps (lowest round)' : 'reps'}` : '';
+    if (type === 'emom') { const n = (v.done || []).filter(Boolean).length; return n ? `${n}/${info ? info.rounds : '?'} rounds` : ''; }
+    if (type === 'intervals') { const ts = (v.sets || []).map((x) => x && t(x.mm, x.ss)).filter(Boolean); return ts.join(', '); }
+    return '';
+  }
+  function lastScore(as, b) {
+    const sig = blockSig(b);
+    const w = [...S().workouts].filter((x) => x.scores && x.date <= as.date && x.id !== as.id).sort((a, z) => (z.date + (z.time || '')).localeCompare(a.date + (a.time || ''))).find((x) => x.scores.some((s) => s.sig === sig));
+    return w ? { date: w.date, text: w.scores.find((s) => s.sig === sig).text } : null;
+  }
+  function wodCard(b, bi, day, as) {
+    const info = scoreInfo(b), bk = 'b' + bi, v = (as.scores || {})[bk] || {};
+    const last = lastScore(as, b);
+    const clockable = info.minutes || info.every || info.type === 'time';
+    const clockLbl = info.type === 'time' ? `Start clock${info.cap ? ` (cap ${info.cap} min)` : ''}` : info.every ? `Start ${info.every === 30 ? 'Tabata' : 'EMOM'} clock · ${info.rounds} × ${info.every >= 60 && info.every % 60 === 0 ? (info.every / 60) + ' min' : fmtSec(info.every)}` : `Start ${info.minutes}:00 countdown`;
+    const head = `${info.roundsOf > 1 ? `${info.roundsOf} rounds` : ''}`;
+    let h = `<div class="card block-card wod" id="wod-${bk}"><div class="card-head" style="margin-bottom:4px"><h2>${esc(b.name || SCORE_LABEL[info.type])}</h2><span class="chip strong">${SCORE_LABEL[info.type]}</span></div>
+      ${b.note ? `<p class="sub" style="margin-top:0">${esc(b.note)}</p>` : ''}${head ? `<p class="wod-rounds">${head}</p>` : ''}
+      <ul class="wod-moves">${b.exercises.map((ex) => `<li><div class="wod-move"><span class="wod-reps">${esc(String(ex.reps || '').replace(/^as written$|^see notes$/, ''))}${ex.each ? ' each' : ''}</span><span class="wod-name">${esc(ex.name)}</span></div>
+        ${ex.notes ? `<div class="sub wod-note">${esc(ex.notes)}</div>` : ''}
+        ${LOADED.test(ex.name + ' ' + (ex.notes || '')) ? `<label class="wod-wt"><span>Weight used</span><input type="number" inputmode="decimal" step="any" data-wk="${bk}" data-wf="w_${esc(ex.id)}" value="${v.w && v.w[ex.id] != null ? v.w[ex.id] : ''}" placeholder="${unit()}"></label>` : ''}</li>`).join('')}</ul>
+      ${last ? `<p class="sub ex-note">Last time (${C.relDay(last.date)}): <strong>${esc(last.text)}</strong></p>` : ''}
+      ${clockable ? `<button class="btn block" data-action="wod-clock" data-bk="${bk}">⏱ ${clockLbl}</button>` : ''}
+      <div class="wod-score"><div class="wod-score-lbl">Your score</div>`;
+    const num = (f, val, ph, w) => `<input type="number" inputmode="numeric" min="0" step="1" data-wk="${bk}" data-wf="${f}" value="${val ?? ''}" placeholder="${ph}" style="width:${w || 80}px">`;
+    if (info.type === 'time') {
+      h += `<div class="row wod-inputs">${num('mm', v.mm, 'min')}<span>:</span>${num('ss', v.ss, 'sec')}</div>
+        <label class="ed-check"><input type="checkbox" data-wk="${bk}" data-wf="capped" ${v.capped ? 'checked' : ''}><span>Hit the time cap</span></label>
+        ${v.capped ? `<div class="row wod-inputs">${num('rounds', v.rounds, 'rounds')}<span>+</span>${num('reps', v.reps, 'reps')}</div>` : ''}`;
+    } else if (info.type === 'rounds') {
+      h += `<div class="row wod-inputs">${num('rounds', v.rounds, 'rounds')}<span>rounds +</span>${num('reps', v.reps, 'reps')}<span>reps</span></div>`;
+    } else if (info.type === 'reps') {
+      h += `<div class="row wod-inputs">${num('total', v.total, info.every === 30 ? 'lowest' : 'total', 110)}<span>${info.every === 30 ? 'reps in your lowest round' : 'reps'}</span></div>`;
+    } else if (info.type === 'emom') {
+      h += `<p class="sub" style="margin:0 0 6px">Tap each round you finish inside the minute.</p><div class="wod-rounds-grid">${Array.from({ length: info.rounds }, (_, i) => `<button class="wod-round ${(v.done || [])[i] ? 'done' : ''}" data-action="wod-round" data-bk="${bk}" data-i="${i}">${i + 1}</button>`).join('')}</div>`;
+    } else if (info.type === 'intervals') {
+      h += Array.from({ length: info.rounds }, (_, i) => `<div class="row wod-inputs"><span style="width:52px">Set ${i + 1}</span>${num(`s${i}_mm`, ((v.sets || [])[i] || {}).mm, 'min', 70)}<span>:</span>${num(`s${i}_ss`, ((v.sets || [])[i] || {}).ss, 'sec', 70)}</div>`).join('');
+    }
+    return h + '</div></div>';
+  }
+  function wodInput(t, as) {
+    const bk = t.dataset.wk, f = t.dataset.wf;
+    as.scores = as.scores || {};
+    const v = as.scores[bk] || (as.scores[bk] = {});
+    const val = t.type === 'checkbox' ? t.checked : t.value === '' ? null : Number(t.value);
+    if (f.startsWith('w_')) { (v.w || (v.w = {}))[f.slice(2)] = val; }
+    else if (/^s\d+_/.test(f)) { const [, i, k] = f.match(/^s(\d+)_(\w+)$/); const arr = v.sets || (v.sets = []); (arr[+i] || (arr[+i] = {}))[k] = val; }
+    else v[f] = val;
+    C.save();
+    if (f === 'capped') C.render();
+  }
+  // workout clock: countdown (AMRAP), interval beeps (EMOM / Tabata) or stopwatch (for time)
+  let wodIv = null, audio = null;
+  function beep(hi) {
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.frequency.value = hi ? 1320 : 880; g.gain.value = 0.15; o.connect(g); g.connect(audio.destination);
+      o.start(); o.stop(audio.currentTime + (hi ? 0.45 : 0.18));
+    } catch (_) { /* no audio */ }
+    if (navigator.vibrate) navigator.vibrate(hi ? [300, 100, 300] : 120);
+  }
+  function clockBar() {
+    let el = document.getElementById('wod-clock');
+    if (!el) { el = document.createElement('div'); el.id = 'wod-clock'; el.setAttribute('role', 'timer'); document.body.appendChild(el); }
+    return el;
+  }
+  function runClock() {
+    clearInterval(wodIv);
+    const as = S().activeSession, c = as && as.clock;
+    const el = clockBar();
+    if (!c) { el.classList.remove('show'); return; }
+    let lastSec = null;
+    const tick = () => {
+      const as2 = S().activeSession;
+      if (!as2 || !as2.clock) { clearInterval(wodIv); el.classList.remove('show'); return; }
+      const t = (Date.now() - c.start) / 1000 - 5; // 5-second lead-in
+      const sec = Math.floor(t);
+      let main, sub = '', done = false;
+      if (t < 0) { main = `${Math.ceil(-t)}`; sub = 'Get ready'; if (sec !== lastSec && sec >= -3) beep(false); }
+      else if (c.every) {
+        const k = Math.floor(t / c.every), left = c.every - (t - k * c.every);
+        if (k >= c.rounds) done = true;
+        main = fmtSec(Math.ceil(left)); sub = `Round ${Math.min(k + 1, c.rounds)} of ${c.rounds}`;
+        if (sec !== lastSec && Math.ceil(left) === c.every && sec >= 0) beep(true);
+      } else if (c.mode === 'down') {
+        const left = c.minutes * 60 - t; if (left <= 0) done = true;
+        main = fmtSec(Math.max(0, Math.ceil(left))); sub = 'AMRAP';
+        if (sec !== lastSec && sec === 0) beep(true);
+      } else {
+        main = fmtSec(Math.max(0, t)); sub = c.cap ? `Cap ${c.cap}:00` : 'For time';
+        if (sec !== lastSec && sec === 0) beep(true);
+        if (c.cap && t >= c.cap * 60) done = true;
+      }
+      if (sec !== lastSec) lastSec = sec;
+      if (done) {
+        beep(true); clearInterval(wodIv);
+        const bk = c.bk; as2.clock = null; C.save();
+        if (c.mode === 'up' && c.cap) { const v = (as2.scores || (as2.scores = {}))[bk] || (as2.scores[bk] = {}); v.capped = true; C.save(); }
+        el.innerHTML = `<span><strong>Time!</strong> Enter your score</span><button data-action="wod-clock-close">OK</button>`; el.classList.add('show', 'over');
+        if (C.ui.tab === 'session') { C.render(); const card = document.getElementById('wod-' + bk); if (card) card.scrollIntoView({ block: 'center' }); }
+        return;
+      }
+      el.classList.remove('over');
+      el.innerHTML = `<div><div class="wod-clock-main">${main}</div><div class="wod-clock-sub">${esc(sub)}</div></div>
+        ${c.mode === 'up' && t >= 0 ? '<button class="btn small primary" data-action="wod-clock-stop">Done</button>' : ''}<button class="btn small" data-action="wod-clock-cancel">✕</button>`;
+      el.classList.add('show');
+    };
+    tick(); wodIv = setInterval(tick, 250);
+  }
+
   // ---------- session logger ----------
   function startSession(dayId, planId) {
     const st = S();
@@ -467,12 +622,15 @@
         ${wu.note ? `<p class="sub">${esc(wu.note)}</p>` : ''}
         ${wu.items.map((it, i) => `<button class="habit ${as.primer[i] ? 'done' : ''}" data-action="primer-toggle" data-i="${i}"><span class="box"></span><span>${esc(it.name)} <span class="sub">${esc(it.dose)}</span></span></button>`).join('')}</details>`;
     }
-    day.blocks.forEach((b) => {
+    day.blocks.forEach((b, bi) => {
+      const si = scoreInfo(b);
+      if (si.type !== 'sets') { h += wodCard(b, bi, day, as); return; }
+      const clk = si.every && si.rounds ? `<button class="btn small block" data-action="wod-clock" data-bk="b${bi}" style="margin:0 0 10px">⏱ Start EMOM clock · ${si.rounds} × ${si.every % 60 === 0 ? si.every / 60 + ' min' : fmtSec(si.every)}</button>` : '';
       if (b.type === 'superset') {
-        h += `<div class="card block-card"><div class="card-head" style="margin-bottom:4px"><h2>${esc(b.name || 'Superset')}</h2></div>${b.note ? `<p class="sub" style="margin-top:0">${esc(b.note)}</p>` : ''}
+        h += `<div class="card block-card"><div class="card-head" style="margin-bottom:4px"><h2>${esc(b.name || 'Superset')}</h2></div>${b.note ? `<p class="sub" style="margin-top:0">${esc(b.note)}</p>` : ''}${clk}
           ${b.exercises.map((ex, i) => exerciseCard(withRegion(ex, day), as, wk, String.fromCharCode(65 + i))).join('')}</div>`;
       } else {
-        h += `<div class="card block-card">${b.name ? `<div class="card-head" style="margin-bottom:4px"><h2>${esc(b.name)}</h2></div>` : ''}${b.note ? `<p class="sub" style="margin-top:0">${esc(b.note)}</p>` : ''}${b.exercises.map((ex) => exerciseCard(withRegion(ex, day), as, wk)).join('')}</div>`;
+        h += `<div class="card block-card">${b.name ? `<div class="card-head" style="margin-bottom:4px"><h2>${esc(b.name)}</h2></div>` : ''}${b.note ? `<p class="sub" style="margin-top:0">${esc(b.note)}</p>` : ''}${clk}${b.exercises.map((ex) => exerciseCard(withRegion(ex, day), as, wk)).join('')}</div>`;
       }
     });
     if (day.freeform || as.extra.length) {
@@ -509,14 +667,28 @@
         sets.push({ exId, name: f ? f.ex.name : exId, set: i + 1, weight: v.weight ?? null, reps: v.reps ?? null });
       });
     });
-    if (!sets.length && !confirm('No sets logged. Save this workout anyway?')) return;
+    const scores = [];
+    { const plan = planCache.get(as.planId);
+      const day = plan && (daysAt(plan, as.week).find((d) => d.id === as.dayId) || plan.days.find((d) => d.id === as.dayId));
+      ((day && day.blocks) || []).forEach((b, bi) => {
+        const info = scoreInfo(b); if (info.type === 'sets') return;
+        const v = (as.scores || {})['b' + bi]; if (!v) return;
+        const text = scoreText(info.type, v, info);
+        if (text) scores.push({ key: 'b' + bi, sig: blockSig(b), name: b.name || SCORE_LABEL[info.type], type: info.type, text, value: v });
+        Object.entries(v.w || {}).forEach(([exId, wt]) => {
+          if (!wt) return; const ex = b.exercises.find((e) => e.id === exId); if (!ex) return;
+          const r = parseInt(ex.reps, 10); sets.push({ exId, name: ex.name, set: 1, weight: wt, reps: Number.isFinite(r) && String(r) === String(ex.reps).trim() ? r : null });
+        });
+      }); }
+    if (!sets.length && !scores.length && !confirm('Nothing logged. Save this workout anyway?')) return;
     const minutes = Math.max(1, Math.min(240, Math.round((Date.now() - as.startedAt) / 60000)));
     const before = C.liftBests();
     const rec = { id: C.uid(), date: as.date, time: new Date(as.startedAt).toTimeString().slice(0, 5), type: `${as.dayLabel} · ${as.dayName}`, minutes,
       planId: as.planId, dayId: as.dayId, week: as.week, deload: !!as.deload, sets, notes: as.notes.trim(), exercises: '', intensity: null };
+    if (scores.length) rec.scores = scores;
     st.workouts.push(rec);
     st.activeSession = null;
-    stopTimer();
+    stopTimer(); runClock();
     C.save();
     const prs = [];
     const seen = new Set();
@@ -524,7 +696,7 @@
       const k = exKey(s.name), b = before.get(k);
       if (b && s.weight > b.weight && !seen.has(k)) { seen.add(k); prs.push(`${s.name} ${s.weight}`); }
     });
-    C.toast(prs.length ? `New PR: ${prs.slice(0, 2).join(', ')} 🏆` : `Workout saved · ${sets.length} sets · ${minutes} min 💪`);
+    C.toast(prs.length ? `New PR: ${prs.slice(0, 2).join(', ')} 🏆` : scores.length ? `Workout saved · ${scores.length} score${scores.length > 1 ? 's' : ''} logged 💪` : `Workout saved · ${sets.length} sets · ${minutes} min 💪`);
     C.setTab('train');
   }
 
@@ -657,8 +829,33 @@
         C.save();
       });
     },
+    'wod-round': (el) => {
+      const as = S().activeSession; as.scores = as.scores || {};
+      const v = as.scores[el.dataset.bk] || (as.scores[el.dataset.bk] = {}); const d = v.done || (v.done = []);
+      d[+el.dataset.i] = !d[+el.dataset.i]; C.save(); el.classList.toggle('done', !!d[+el.dataset.i]);
+    },
+    'wod-clock': (el) => {
+      const as = S().activeSession, plan = planCache.get(as.planId);
+      const day = plan && (daysAt(plan, as.week).find((d) => d.id === as.dayId) || plan.days.find((d) => d.id === as.dayId));
+      const b = day && day.blocks[+el.dataset.bk.slice(1)]; if (!b) return;
+      const info = scoreInfo(b);
+      if (as.clock && !confirm('Restart the clock?')) return;
+      beep(false); stopTimer();
+      as.clock = { bk: el.dataset.bk, start: Date.now(), every: info.every || null, rounds: info.rounds || null, minutes: info.minutes || null, cap: info.cap || null,
+        mode: info.every ? 'every' : info.type === 'time' ? 'up' : 'down' };
+      C.save(); runClock();
+    },
+    'wod-clock-stop': () => {
+      const as = S().activeSession; const c = as && as.clock; if (!c) return;
+      const t = Math.max(0, Math.round((Date.now() - c.start) / 1000 - 5));
+      as.scores = as.scores || {}; const v = as.scores[c.bk] || (as.scores[c.bk] = {});
+      v.mm = Math.floor(t / 60); v.ss = t % 60; v.capped = false; as.clock = null; C.save(); runClock(); C.render();
+      C.toast(`Time: ${fmtSec(t)}`);
+    },
+    'wod-clock-cancel': () => { const as = S().activeSession; if (as && as.clock && !confirm('Stop the clock?')) return; if (as) { as.clock = null; C.save(); } runClock(); },
+    'wod-clock-close': () => { clockBar().classList.remove('show', 'over'); },
     'session-finish': () => { if (confirm('Finish and save this workout?')) finishSession(); },
-    'session-discard': () => { if (confirm('Discard this workout? Logged sets will be lost.')) { S().activeSession = null; stopTimer(); C.save(); C.setTab('train'); } },
+    'session-discard': () => { if (confirm('Discard this workout? Logged sets will be lost.')) { S().activeSession = null; stopTimer(); runClock(); C.save(); C.setTab('train'); } },
     'timer-add': () => { if (timer) timer.end += 15000; },
     'timer-stop': stopTimer,
     'log-cardio': (el) => {
@@ -688,6 +885,7 @@
       const groups = [];
       w.sets.forEach((s) => { let g = groups.find((x) => x.name === s.name); if (!g) groups.push(g = { name: s.name, sets: [] }); g.sets.push(s); });
       C.openModal(`<h2>${esc(w.type)}</h2><p class="sub" style="margin-top:0">${C.prettyDate(w.date, { weekday: 'long', month: 'short', day: 'numeric' })}${w.week ? ' · Week ' + w.week : ''} · ${w.minutes || '?'} min</p>
+        ${(w.scores || []).length ? `<ul class="list">${w.scores.map((x) => `<li><div class="grow"><div class="title">${esc(x.name)}</div><div class="meta">${esc(SCORE_LABEL[x.type] || '')}</div></div><span class="num">${esc(x.text)}</span></li>`).join('')}</ul>` : ''}
         <ul class="list">${groups.map((g) => `<li><div class="grow"><div class="title">${esc(g.name)}</div><div class="meta">${g.sets.map((s) => (s.weight ? `${s.weight}×${s.reps ?? '–'}` : `${s.reps ?? '–'} reps`)).join(' · ')}</div></div></li>`).join('')}</ul>
         ${w.notes ? `<p>${esc(w.notes)}</p>` : ''}
         <button class="btn danger small" data-modal-action="del-session" data-id="${w.id}">Delete workout</button>`, null, { hideSave: true });
@@ -704,6 +902,7 @@
     const t = e.target;
     const as = S().activeSession;
     if (!as) return;
+    if (t.dataset.wk) { wodInput(t, as); return; }
     if (t.dataset.sx) {
       const v = t.value === '' ? null : Number(t.value);
       setVal(t.dataset.sx, +t.dataset.si, t.dataset.sf, Number.isFinite(v) ? v : null);
@@ -716,7 +915,9 @@
     const byEx = new Map();
     w.sets.forEach((s) => { const k = s.name; const g = byEx.get(k) || []; g.push(s); byEx.set(k, g); });
     const top = w.sets.filter((s) => s.weight).sort((a, b) => b.weight - a.weight)[0];
-    return `${byEx.size} exercises · ${w.sets.length} sets${top ? ` · top ${esc(top.name)} ${top.weight}×${top.reps ?? '–'}` : ''}`;
+    const sc = (w.scores || []).map((x) => `${esc(x.name.split(' · ')[0])}: ${esc(x.text)}`).join(' · ');
+    if (!w.sets.length && sc) return sc;
+    return `${byEx.size} exercises · ${w.sets.length} sets${top ? ` · top ${esc(top.name)} ${top.weight}×${top.reps ?? '–'}` : ''}${sc ? ' · ' + sc : ''}`;
   }
 
   window.Training = {
@@ -731,7 +932,8 @@
       Object.assign(ctx.PARENT, { plans: 'train', guide: 'train', session: 'train' });
       document.addEventListener('input', onInput);
     },
-    afterRender(tab) { if (tab === 'session') sessionClock(); },
+    afterRender(tab) { if (tab === 'session') sessionClock(); if (!wodIv && S().activeSession && S().activeSession.clock) runClock(); },
+    scoreInfo,
     preload() { progs().forEach((p) => loadPlan(p.planId).then(() => C.render()).catch(() => {})); },
     resetPlans() { planIndex = null; indexPromise = null; planCache.clear(); failedPlans.clear(); progs().forEach((p) => loadPlan(p.planId).then(() => C.softRender ? C.softRender() : C.render()).catch(() => {})); },
     progs, planNow: (id) => planNow(id), loadPlan, plannedOn,

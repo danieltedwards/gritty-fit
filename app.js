@@ -21,7 +21,7 @@
   const relDay = (iso) => { const diff = daysBetween(iso, todayISO()); return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : prettyDate(iso); };
   const byDateDesc = (a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || ''));
 
-  const APP_VERSION = '2026.11.04-j';
+  const APP_VERSION = '2026.11.05-a';
   // ---------- state ----------
   const DEFAULT_STATE = () => ({
     version: 1,
@@ -81,7 +81,7 @@
       <button class="btn" value="cancel" formnovalidate>${hideSave ? 'Close' : 'Cancel'}</button>
       ${hideSave ? '' : `<button class="btn primary" value="save">${saveLabel}</button>`}</div>`;
     modalHandler = onSave;
-    modal.showModal();
+    if (!modal.open) { modal.showModal(); Nav.pushModal(); }
     const first = modalForm.querySelector('[autofocus]');
     if (first) setTimeout(() => first.focus(), 50);
   }
@@ -97,7 +97,44 @@
     if (b && modalActions[b.dataset.modalAction]) { e.preventDefault(); modalActions[b.dataset.modalAction](b); }
   });
   modal.addEventListener('click', (e) => { if (e.target === modal) modal.close(); });
-  modal.addEventListener('close', () => window.FoodLookup && FoodLookup.stopScanner());
+  modal.addEventListener('close', () => { if (window.FoodLookup) FoodLookup.stopScanner(); Nav.modalClosed(); });
+
+  // ---------- browser history: the phone's back gesture/button steps back through the app ----------
+  // Every screen change and every open pop-up gets a history entry, so Android's back swipe closes the
+  // pop-up or returns to the previous screen instead of leaving the app.
+  const Nav = (() => {
+    let skipPop = 0, closingFromPop = false;
+    const depth = () => (history.state && history.state.d) || 0;
+    return {
+      init() {
+        // Today is the bottom of the stack; any other starting tab sits one step above it
+        if (ui.tab === 'today') history.replaceState({ tab: 'today', d: 0 }, '');
+        else { history.replaceState({ tab: 'today', d: 0 }, ''); history.pushState({ tab: ui.tab, d: 1 }, ''); }
+        window.addEventListener('popstate', (e) => this.onPop(e.state || { tab: 'today', d: 0 }));
+      },
+      push(tab, extra) { history.pushState(Object.assign({ tab, d: depth() + 1 }, extra || {}), ''); },
+      pushModal() { history.pushState(Object.assign({}, history.state, { modal: 1, d: depth() + 1 }), ''); },
+      modalClosed() {
+        if (closingFromPop) return;
+        if (history.state && history.state.modal) { skipPop++; history.back(); }
+      },
+      canPop: () => depth() > 0,
+      onPop(st) {
+        if (skipPop > 0) { skipPop--; return; }
+        if (modal.open) { closingFromPop = true; modal.close(); closingFromPop = false; return; }
+        if (ui.tab === 'editor' && st.tab !== 'editor') {
+          if (ui.ed && ui.ed.dirty && !confirm('Close without saving your changes?')) { history.pushState({ tab: 'editor', d: depth() + 1 }, ''); return; }
+          ui.ed = null;
+        }
+        if (window.Chat && Chat.onNav && Chat.onNav(st)) return;
+        let t = st.tab && views[st.tab] ? st.tab : 'today';
+        if (t === 'session' && !S.activeSession) t = 'train';
+        if (t === 'editor' && !ui.ed) t = 'coach';
+        if (t === 'coach' && !(window.Cloud && Cloud.profile && Cloud.profile.role === 'coach')) t = 'today';
+        setTab(t, { fromPop: true });
+      },
+    };
+  })();
   const modalActions = {};
 
   const field = (label, input, hint = '') => `<label class="field"><span>${label}</span>${input}</label>${hint ? `<p class="hint">${hint}</p>` : ''}`;
@@ -1361,6 +1398,8 @@
   document.addEventListener('click', (e) => {
     const tabBtn = e.target.closest('.tabbar [data-tab]');
     if (tabBtn) { setTab(tabBtn.dataset.tab); return; }
+    // the in-app back arrow behaves exactly like the phone's back gesture
+    if (e.target.closest('#back-btn') && Nav.canPop() && !(window.Chat && Chat.handlesBack && Chat.handlesBack())) { e.preventDefault(); history.back(); return; }
     const el = e.target.closest('[data-action]');
     if (!el || el.closest('#modal')) return;
     e.preventDefault();
@@ -1387,7 +1426,8 @@
   // ---------- render ----------
   const TITLES = { today: 'Today', food: 'Food', train: 'Training', body: 'Body', journal: 'Goals & Journal' };
   const PARENT = {};
-  function setTab(tab) {
+  function setTab(tab, opts) {
+    if (!(opts && opts.fromPop) && tab !== ui.tab) Nav.push(tab);
     ui.tab = tab;
     if (tab === 'food') ui.foodDate = todayISO();
     try { localStorage.setItem('gf-tab', PARENT[tab] && tab !== 'session' ? PARENT[tab] : tab); } catch (_) { /* ignore */ }
@@ -1464,6 +1504,7 @@
     if (ui.tab === 'session' && !S.activeSession) ui.tab = 'train';
     if ((ui.tab === 'guide' && !ui.guidePlan) || ui.tab === 'plans') ui.tab = 'train';
     if (ui.tab === 'coach' || ui.tab === 'editor' || ui.tab === 'chat') ui.tab = 'today';
+    Nav.init();
     render();
     Training.preload();
     if (window.Cloud) Cloud.start().catch((e) => console.warn('cloud', e));

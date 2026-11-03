@@ -156,7 +156,7 @@
   }
   const actions = {
     'chat-open': () => { C.ui.chatFrom = C.ui.tab === 'chat' ? C.ui.chatFrom : C.ui.tab; if (!isCoach()) openThread(me()); else { st.thread = null; loadClients(); } C.setTab('chat'); loadSummary(); },
-    'chat-thread': (el) => { openThread(el.dataset.id, el.dataset.name); C.render(); requestAnimationFrame(() => window.scrollTo(0, document.body.scrollHeight)); },
+    'chat-thread': (el) => { history.pushState({ tab: 'chat', thread: el.dataset.id, name: el.dataset.name, d: ((history.state && history.state.d) || 0) + 1 }, ''); openThread(el.dataset.id, el.dataset.name); C.render(); requestAnimationFrame(() => window.scrollTo(0, document.body.scrollHeight)); },
     'chat-with': (el) => { C.ui.chatFrom = C.ui.tab; openThread(el.dataset.id, el.dataset.name); C.setTab('chat'); },
     'chat-back': () => {
       if (isCoach() && st.thread && C.ui.chatFrom !== 'coach') { st.thread = null; setFast(false); loadSummary().then(() => { if (C.ui.tab === 'chat') C.render(); }); C.render(); return; }
@@ -204,6 +204,15 @@
     },
     onSignedIn() { st.summary = []; st.clients = null; st.thread = null; st.msgs = []; loadSummary(); },
     onSignedOut() { st.summary = []; st.clients = null; st.thread = null; st.msgs = []; setFast(false); updateFab(); },
+    // phone back gesture inside chat: thread → client list (coach), or leave chat
+    onNav(stt) {
+      if (C.ui.tab === 'chat' && stt.tab === 'chat') {
+        if (stt.thread) openThread(stt.thread, stt.name); else if (isCoach()) { st.thread = null; setFast(false); loadSummary().then(() => { if (C.ui.tab === 'chat' && !st.thread) C.render(); }); }
+        C.render(); return true;
+      }
+      if (C.ui.tab === 'chat' && isCoach()) { st.thread = null; setFast(false); }
+      return false;
+    },
     composing: () => document.activeElement && document.activeElement.id === 'chat-input',
     unread: (clientId) => { const s = st.summary.find((x) => x.client_id === clientId); return s ? Number(s.unread || 0) : 0; },
     totalUnread,
