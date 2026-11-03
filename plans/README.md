@@ -23,6 +23,9 @@ written in the app and stored online; this file format stays the same.)
 | `schedule[]` | Optional, for plans that change week to week: `[{weeks:[1,2], days:[...]}]`. The client sees the days for their current week; `days` should still hold week 1 (the template older app versions use). Keep day `id`s (d1, d2…) and exercise `id`s the same across weeks so "last time" numbers carry over |
 | `days[].instructions` | Optional free text shown on the day (conditioning options, intervals, recovery work), one paragraph per line |
 | `progression.kettlebell` | `true` for kettlebell plans: hints say to add reps, slow the tempo, cut rest, then move up a bell size instead of adding 5–10 lb |
+| `exercises[].pct`, `of` | Load as a fraction of a max: `pct: 0.7` (or `[0.7, 0.75]`), `of: "squat"` (`squat`, `bench`, `deadlift`, `press`, `fsquat`, `snatch`, `clean`, `jerk`, `cj`, `pullup`). Clients enter their maxes on the Train tab and see the weight |
+| `exercises[].scheme` | Per-set targets: `[{sets: 2, reps: "10", pct: 0.6}, {sets: 1, reps: "5+", pct: 0.85}]`; `sets`/`reps` should hold the totals (`6`, `"10/8/6"`) for older app versions |
+| `trainingMax` | Optional fraction (e.g. `0.9`): percentages are of this share of the client's max (5/3/1, Juggernaut) |
 | `sections[]` | Coaching text shown in the plan guide: `{title, body: [{p}, {ul:[...]}, {table:{head, rows}}]}` |
 
 Exercise `id`s must be unique within a plan and should stay stable: a client's "last time" numbers

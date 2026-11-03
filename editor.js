@@ -53,6 +53,12 @@
     if (t === 'select') return `<select ${attrs}>${opts.options.map(([v, l]) => `<option value="${esc(v)}" ${String(val ?? '') === String(v) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
     return `<input type="${t === 'number' ? 'number' : 'text'}" ${t === 'number' ? 'inputmode="decimal" step="any"' : ''} ${attrs} value="${esc(val ?? '')}" placeholder="${esc(opts.ph || '')}">`;
   };
+  // percentages are stored as fractions (0.7) or [lo, hi]; edited as "70" or "70-75"
+  const pctToText = (p) => (p == null || p === '' ? '' : Array.isArray(p) ? p.map((x) => Math.round(x * 1000) / 10).join('-') : String(Math.round(p * 1000) / 10));
+  const textToPct = (t) => { const n = String(t).match(/\d+(?:\.\d+)?/g); if (!n) return null; const v = n.slice(0, 2).map((x) => +x / 100); return v.length === 2 && v[0] !== v[1] ? v : v[0]; };
+  // "2x10@60, 1x5+@85" <-> [{sets:2, reps:'10', pct:0.6}, {sets:1, reps:'5+', pct:0.85}]
+  const schemeToText = (sc) => (sc || []).map((g) => `${g.sets}x${g.reps}${g.pct ? '@' + pctToText(g.pct) : ''}`).join(', ');
+  const textToScheme = (t) => { const out = String(t).split(',').map((x) => x.trim()).filter(Boolean).map((x) => { const m = x.match(/^(\d+)\s*[x×]\s*([^@]+?)\s*(?:@\s*(.+))?$/i); return m ? { sets: +m[1], reps: m[2].trim(), ...(m[3] ? { pct: textToPct(m[3]) } : {}) } : null; }).filter(Boolean); return out.length ? out : null; };
   const lab = (label, html, cls = '') => `<label class="field ${cls}"><span>${esc(label)}</span>${html}</label>`;
   const tools = (path, { up = true, down = true, del = true } = {}) => `<span class="ed-tools">${up ? `<button data-action="ed-move" data-path="${path}" data-dir="-1" aria-label="Move up">↑</button>` : ''}${down ? `<button data-action="ed-move" data-path="${path}" data-dir="1" aria-label="Move down">↓</button>` : ''}${del ? `<button data-action="ed-del" data-path="${path}" aria-label="Delete">✕</button>` : ''}</span>`;
   const details = (key, summary, body, extraCls = '') => `<details class="card ed-sec ${extraCls}" data-key="${key}" ${ed().open.has(key) ? 'open' : ''}><summary>${summary}</summary><div class="ed-body">${body}</div></details>`;
@@ -69,6 +75,8 @@
         ${inp(path + '.name', ex.name, { ph: 'Exercise name', attrs: 'class="ed-ex-name"' })}${tools(path, { up: i > 0, down: i < n - 1 })}</div>${allWeeks}
       <div class="ed-grid4">${lab('Sets', inp(path + '.sets', ex.sets, { type: 'number', kind: 'int' }))}${lab('Reps', inp(path + '.reps', ex.reps, { ph: '8–12' }))}${lab('Tempo', inp(path + '.tempo', ex.tempo, { ph: '3-1-1-1' }))}${lab('Rest', inp(path + '.rest', ex.rest, { ph: '60 sec' }))}</div>
       <div class="ed-grid2">${lab('Type', inp(path + '.role', ex.role || 'accessory', { type: 'select', options: ROLES }))}${lab('Effort', inp(path + '.effort', ex.effort, { ph: 'RPE 7' }))}</div>
+      ${lab('Set scheme (optional, overrides sets × reps)', inp(path + '.scheme', schemeToText(ex.scheme), { kind: 'scheme', ph: '2x10@60, 2x8@65, 1x5+@85' }))}
+      <div class="ed-grid2">${lab('% of max', inp(path + '.pct', pctToText(ex.pct), { kind: 'pct', ph: '70 or 70-75' }))}${lab('Of which max', inp(path + '.of', ex.of || '', { type: 'select', options: [['', '—'], ...Object.entries((window.Training && Training.MAX_KEYS) || {})] }))}</div>
       ${lab('Coaching cue', inp(path + '.notes', ex.notes, { type: (ex.notes || '').length > 80 ? 'textarea' : 'text', rows: 3, ph: 'Ribs down, squeeze at the top…' }))}
       <div class="row">${inp(path + '.each', ex.each, { type: 'check', label: 'Each side / leg' })}${inp(path + '.bodyweight', ex.bodyweight, { type: 'check', label: 'Bodyweight' })}${inp(path + '.region', ex.region || '', { type: 'select', options: [['', 'Region: from day'], ['lower', 'Lower body'], ['upper', 'Upper body']] })}</div></div>`;
   }
@@ -112,6 +120,7 @@
       ${lab('Summary (shown when choosing a plan)', inp('summary', d.summary, { type: 'textarea', rows: 3 }))}
       <div class="ed-grid2">${lab('Total weeks', inp('weeks', d.weeks, { type: 'number', kind: 'int' }))}${lab('Block length (weeks)', inp('cycleWeeks', d.cycleWeeks, { type: 'number', kind: 'int' }))}</div>
       ${lab('Blocks note', inp('blocksNote', d.blocksNote, { type: 'textarea', rows: 2, ph: 'Block 2 repeats with heavier loads…' }))}
+      ${lab('Training max % (optional)', inp('trainingMax', pctToText(d.trainingMax), { kind: 'pct', ph: '90 for 5/3/1-style plans' }))}
       ${lab('Days per week (label)', inp('daysPerWeek', d.daysPerWeek, { ph: '4 + 1 optional' }))}
       ${lab('Tags (comma separated)', inp('tags', (d.tags || []).join(', '), { kind: 'list' }))}
       ${inp('progression.kettlebell', d.progression && d.progression.kettlebell, { type: 'check', label: 'Kettlebell plan: progress by reps, tempo and rest, then a bigger bell' })}
@@ -172,6 +181,8 @@
     else if (kind === 'list') v = t.value.split(',').map((x) => x.trim()).filter(Boolean);
     else if (kind === 'weeks') v = textToWeeks(t.value);
     else if (kind === 'body') v = textToBody(t.value);
+    else if (kind === 'pct') v = textToPct(t.value);
+    else if (kind === 'scheme') { v = textToScheme(t.value); const ex = getAt(ed().data, t.dataset.ed.replace(/\.scheme$/, '')); if (v && ex) { ex.sets = v.reduce((a, g) => a + g.sets, 0); ex.reps = v.map((g) => g.reps).join('/'); } }
     else v = t.value;
     setAt(ed().data, t.dataset.ed, v);
     ed().dirty = true;
@@ -230,6 +241,7 @@
     out.sections = (out.sections || []).filter((s) => s.title && s.title.trim());
     out.extras = (out.extras || []).filter((x) => x.name && x.name.trim());
     if (!out.extras.length) delete out.extras;
+    if (!out.trainingMax) delete out.trainingMax;
     out.schema = 1;
     return out;
   }

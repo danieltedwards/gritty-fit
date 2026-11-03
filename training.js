@@ -83,6 +83,33 @@
     return e.days;
   }
   const atWeek = (plan, week) => (plan && plan.schedule ? Object.assign({}, plan, { days: daysAt(plan, week) }) : plan);
+  // ---- percentage-of-max loading (powerlifting, Olympic, tactical plans) ----
+  const MAX_KEYS = { squat: 'Back squat', bench: 'Bench press', deadlift: 'Deadlift', press: 'Overhead press', fsquat: 'Front squat', snatch: 'Snatch', clean: 'Clean', jerk: 'Jerk', cj: 'Clean & jerk', pullup: 'Weighted pull-up' };
+  const pctRange = (p) => (Array.isArray(p) ? p : p != null && p !== '' ? [p, p] : null);
+  const pctText = (p) => { const r = pctRange(p); if (!r) return ''; const f = (x) => Math.round(x * 1000) / 10; return r[0] === r[1] ? `${f(r[0])}%` : `${f(r[0])}–${f(r[1])}%`; };
+  const roundLoad = (x) => { const step = unit() === 'kg' ? 2.5 : 5; return Math.round(x / step) * step; };
+  function targetLoad(ex, plan) {
+    if (!ex.pct || !ex.of) return null;
+    const m = Number((S().settings.maxes || {})[ex.of]);
+    if (!m) return { missing: true };
+    const tm = (plan && plan.trainingMax) || 1;
+    const r = pctRange(ex.pct).map((x) => roundLoad(m * tm * x));
+    return { lo: r[0], hi: r[1], text: r[0] === r[1] ? `${r[0]}` : `${r[0]}–${r[1]}` };
+  }
+  // set schemes: [{sets, reps, pct?}] → one entry per set
+  const expandScheme = (ex) => (ex.scheme || []).flatMap((g) => Array.from({ length: g.sets || 1 }, () => g));
+  const schemeText = (ex) => ex.scheme.map((g) => `${g.sets}×${g.reps}${g.pct ? ' @ ' + pctText(g.pct) : ''}`).join(', ');
+  function loadFor(pct, of, plan) {
+    const m = Number((S().settings.maxes || {})[of]);
+    if (!pct || !of || !m) return null;
+    const r = pctRange(pct).map((x) => roundLoad(m * ((plan && plan.trainingMax) || 1) * x));
+    return r[0] === r[1] ? `${r[0]}` : `${r[0]}–${r[1]}`;
+  }
+  function maxesNeeded(plan) {
+    const keys = new Set();
+    (plan.schedule ? plan.schedule.flatMap((e) => e.days || []) : plan.days || []).forEach((d) => (d.blocks || []).forEach((b) => (b.exercises || []).forEach((x) => { if (x.of && (x.pct || (x.scheme || []).some((g) => g.pct))) keys.add(x.of); })));
+    return [...keys];
+  }
   const instructionsHTML = (t) => (t ? `<div class="day-instr">${String(t).split(/\n+/).map((l) => `<p>${esc(l)}</p>`).join('')}</div>` : '');
   // "8–12" → {min 8, max 12}; pyramids / drop sets ("20/15/10") and mixed schemes ("AMRAP, then 3×1") have no single range
   const repRange = (reps) => { const r = String(reps); if (/[\/,]/.test(r)) return null; const m = r.match(/\d+/g); return m ? { min: +m[0], max: +(m[1] || m[0]) } : null; };
@@ -187,6 +214,7 @@
       ${wk.guide ? `<p class="sub" style="margin:6px 0 0"><strong>${esc(wk.guide.effort)}</strong>. ${esc(wk.guide.note || '')}</p>` : ''}`}
       <div class="days">${pw.days.map((d) => `<button class="day ${doneIds.has(d.id) ? 'done' : ''} ${nd && nd.id === d.id ? 'next' : ''}" data-action="session-start" data-day="${d.id}">
         <span class="day-label">${esc(d.label)}${d.optional ? ' · optional' : ''}</span><span class="day-name">${esc(d.name)}</span><span class="day-state">${doneIds.has(d.id) ? '✓ Done' : nd && nd.id === d.id ? 'Up next' : ''}</span></button>`).join('')}</div>
+      ${maxesRow(plan)}
       ${!as && nd && !wk.done ? `<button class="btn primary block" data-action="session-start" data-day="${nd.id}" style="margin-top:10px">Start ${esc(nd.label)}: ${esc(nd.name)}</button>` : ''}
       ${!nd && !wk.done && !wk.before ? '<p class="sub">All sessions done this week. Recover well 💪</p>' : ''}
       ${plan.cardio ? `<div class="row" style="justify-content:space-between;margin-top:12px;flex-wrap:nowrap"><div><strong>Cardio</strong> <span class="sub">${cardioDone} / ${plan.cardio.perWeek.join('–')} this week · ${plan.cardio.minutes.join('–')} min</span></div>
@@ -200,6 +228,17 @@
       }).join('')}
     </div>`;
     return h;
+  }
+
+  function maxesRow(plan) {
+    const keys = maxesNeeded(plan);
+    if (!keys.length) return '';
+    const mx = S().settings.maxes || {}, u = unit();
+    const missing = keys.filter((k) => !Number(mx[k]));
+    return `<div class="row maxes-row" style="justify-content:space-between;margin-top:12px;flex-wrap:nowrap"><div class="sub" style="min-width:0">
+        ${missing.length ? `<strong class="bad">Enter your maxes</strong> to see target weights` : `<strong>Your maxes</strong> ${keys.map((k) => `${esc(MAX_KEYS[k] || k)} ${mx[k]}`).join(' · ')} ${u}`}
+        ${plan.trainingMax ? `<div style="font-size:12px">Weights use a training max of ${Math.round(plan.trainingMax * 100)}%.</div>` : ''}</div>
+      <button class="btn small ${missing.length ? 'primary' : ''}" data-action="maxes-edit" data-id="${esc(plan.id)}" style="flex:none">${missing.length ? 'Add' : 'Edit'}</button></div>`;
   }
 
   // Today screen card
@@ -243,7 +282,7 @@
       return '';
     }).join('');
   }
-  const prescription = (ex) => `${ex.sets} × ${esc(ex.reps)}${ex.each ? ' each side' : ''}`;
+  const prescription = (ex) => (ex.scheme && ex.scheme.length ? esc(schemeText(ex)) : `${ex.sets} × ${esc(ex.reps)}`) + (ex.each ? ' each side' : '');
 
   function viewGuide() {
     const id = C.ui.guidePlan;
@@ -274,7 +313,7 @@
       ${d.focus ? `<p class="sub"><em>${esc(d.focus)}</em></p>` : ''}${instructionsHTML(d.instructions)}
       ${d.warmup && plan.warmups && plan.warmups[d.warmup] ? `<p class="sub">Starts with the ${esc(plan.warmups[d.warmup].name)}.</p>` : ''}
       ${d.blocks.map((b) => `${b.type === 'superset' || b.name ? `<div class="res-head">${esc(b.name || 'Superset')}</div>` : ''}<ul class="list">${b.exercises.map((ex, i) => `<li><div class="grow"><div class="title">${b.type === 'superset' ? String.fromCharCode(65 + i) + '. ' : ''}${esc(ex.name)}</div>
-        <div class="meta">${[ex.tempo ? 'Tempo ' + ex.tempo : '', ex.rest ? 'Rest ' + ex.rest : '', ex.effort || ''].filter(Boolean).join(' · ')}</div>${ex.notes ? `<div class="meta ex-guide-note">${esc(ex.notes)}</div>` : ''}</div><span class="num">${prescription(ex)}</span></li>`).join('')}</ul>`).join('')}
+        <div class="meta">${[ex.pct ? `${pctText(ex.pct)} of ${(MAX_KEYS[ex.of] || ex.of || 'max').toLowerCase()}${ex.of ? ' max' : ''}` : '', ex.tempo ? 'Tempo ' + ex.tempo : '', ex.rest ? 'Rest ' + ex.rest : '', ex.effort || ''].filter(Boolean).join(' · ')}</div>${ex.notes ? `<div class="meta ex-guide-note">${esc(ex.notes)}</div>` : ''}</div><span class="num">${prescription(ex)}</span></li>`).join('')}</ul>`).join('')}
       ${d.suggestions ? `<div>${d.suggestions.map((s) => `<span class="chip">${esc(s)}</span>`).join('')}</div>` : ''}</div>`).join('');
     h += (plan.sections || []).map((s) => `<details class="card guide-sec"><summary><strong>${esc(s.title)}</strong></summary><div class="guide-body">${renderBody(s.body)}</div></details>`).join('');
     return h;
@@ -300,15 +339,20 @@
   function openSession() { C.setTab('session'); }
 
   function setRows(ex, as, last) {
-    const n = ex.sets + (as.extraSets[ex.id] || 0);
+    const tgt = targetLoad(ex, planCache.get(as.planId));
+    const per = ex.scheme ? expandScheme(ex) : null;
+    const n = (per ? per.length : ex.sets) + (as.extraSets[ex.id] || 0);
     const u = unit();
     const rr = repRange(ex.reps);
     let h = `<div class="sets"><div class="set-head"><span>Set</span><span>${ex.bodyweight ? '+' + u : u}</span><span>Reps</span><span></span></div>`;
     for (let i = 0; i < n; i++) {
       const v = (as.sets[ex.id] || [])[i] || {};
       const prev = last && last.sets[i];
-      const phW = prev && prev.weight != null ? prev.weight : '';
-      const phR = prev && prev.reps != null ? prev.reps : rr ? (rr.min === rr.max ? rr.min : `${rr.min}-${rr.max}`) : '';
+      const g = per && per[i];
+      const gW = g && g.pct ? parseFloat(loadFor(g.pct, ex.of, planCache.get(as.planId)) || '') : NaN;
+      const phW = !isNaN(gW) ? gW : tgt && !tgt.missing ? tgt.lo : prev && prev.weight != null ? prev.weight : '';
+      const gR = g ? (String(g.reps).match(/\d+/) || [''])[0] : '';
+      const phR = g ? gR : prev && prev.reps != null ? prev.reps : rr ? (rr.min === rr.max ? rr.min : `${rr.min}-${rr.max}`) : '';
       h += `<div class="set-row ${v.done ? 'done' : ''}"><span class="set-n">${i + 1}</span>
         <input type="number" inputmode="decimal" step="any" min="0" placeholder="${esc(phW)}" value="${v.weight ?? ''}" data-sx="${ex.id}" data-si="${i}" data-sf="weight" aria-label="Set ${i + 1} weight">
         <input type="number" inputmode="numeric" step="1" min="0" placeholder="${esc(phR)}" value="${v.reps ?? ''}" data-sx="${ex.id}" data-si="${i}" data-sf="reps" aria-label="Set ${i + 1} reps">
@@ -323,10 +367,14 @@
     // first time this exercise is trained in a new block → suggest a heavier start
     const blockStart = C.addDays(wk.weekStart, -7 * (wk.cycleWeek - 1));
     const wk2 = Object.assign({}, wk, { newBlock: wk.block > 1 && !deloadNow && !!last && last.date < blockStart });
-    const hn = hint(ex, last, wk2);
+    const tgt = targetLoad(ex, planCache.get(as.planId));
+    const schemeLoads = ex.scheme && ex.of && ex.scheme.some((g) => g.pct) ? ex.scheme.map((g) => ({ g, w: loadFor(g.pct, ex.of, planCache.get(as.planId)) })) : null;
+    const hn = schemeLoads ? (schemeLoads.every((x) => x.w || !x.g.pct) ? `Targets: ${schemeLoads.map((x) => `${x.g.sets}×${x.g.reps}${x.w ? ' @ ' + x.w : ''}`).join(', ')} ${unit()}.` : `Enter your ${MAX_KEYS[ex.of] || ex.of} max on the Train tab to see your target weights.`)
+      : tgt && !tgt.missing ? `Target today: ${tgt.text} ${unit()} (${pctText(ex.pct)} of your ${MAX_KEYS[ex.of] || ex.of} max${(planCache.get(as.planId) || {}).trainingMax ? ' × training max' : ''}).`
+      : tgt && tgt.missing ? `Enter your ${MAX_KEYS[ex.of] || ex.of} max on the Train tab to see your target weight.` : hint(ex, last, wk2);
     const lastTxt = last ? last.sets.map((s) => (s.weight ? `${s.weight}×${s.reps ?? '–'}` : `${s.reps ?? '–'}`)).join(', ') : '';
     return `<div class="ex-card" id="ex-${ex.id}"><div class="ex-title">${letter ? `<span class="ex-letter">${letter}</span>` : ''}${esc(ex.name)}</div>
-      <div class="ex-chips"><span class="chip strong">${prescription(ex)}</span>${ex.tempo ? `<span class="chip">Tempo ${esc(ex.tempo)}</span>` : ''}${ex.rest ? `<span class="chip">Rest ${esc(ex.rest)}</span>` : ''}${ex.effort ? `<span class="chip">${esc(ex.effort)}</span>` : ''}
+      <div class="ex-chips"><span class="chip strong">${prescription(ex)}</span>${ex.pct ? `<span class="chip strong">${pctText(ex.pct)}${tgt && !tgt.missing ? ` · ${tgt.text} ${unit()}` : ''}</span>` : ''}${ex.tempo ? `<span class="chip">Tempo ${esc(ex.tempo)}</span>` : ''}${ex.rest ? `<span class="chip">Rest ${esc(ex.rest)}</span>` : ''}${ex.effort ? `<span class="chip">${esc(ex.effort)}</span>` : ''}
         ${ex.role === 'main' && wk.guide && !ex.effort ? `<span class="chip">${esc(wk.guide.effort.replace('Main lifts ', ''))}</span>` : ''}</div>
       ${ex.notes ? `<p class="sub ex-note">${esc(ex.notes)}</p>` : ''}
       ${lastTxt ? `<p class="sub ex-note">Last (${C.relDay(last.date)}): ${esc(lastTxt)}</p>` : ''}
@@ -490,6 +538,18 @@
         setTimeout(() => C.setTab('train'), 0);
       }, { saveLabel: 'Start plan' });
     },
+    'maxes-edit': (el) => {
+      const plan = planCache.get(el.dataset.id) || {};
+      const keys = [...new Set([...maxesNeeded(plan), ...Object.keys(S().settings.maxes || {})])];
+      const mx = S().settings.maxes || {}, u = unit();
+      C.openModal(`<h2>Your maxes</h2><p class="sub" style="margin-top:0">Your best single rep (or a recent tested max) for each lift, in ${u}. Target weights in your plan are worked out from these.</p>
+        ${keys.map((k) => C.field(`${MAX_KEYS[k] || k} (${u})`, `<input type="number" inputmode="decimal" step="any" min="0" name="max_${k}" value="${mx[k] || ''}">`)).join('')}
+        <p class="hint">Not sure? Use a weight you can lift about 3 times and multiply by 1.1.</p>`, (fd) => {
+        const st = S(); st.settings.maxes = Object.assign({}, st.settings.maxes || {});
+        keys.forEach((k) => { const v = Number(fd.get('max_' + k)); if (v > 0) st.settings.maxes[k] = v; else delete st.settings.maxes[k]; });
+        C.save(); C.toast('Maxes saved'); C.render();
+      }, { saveLabel: 'Save maxes' });
+    },
     'plan-leave': () => {
       if (!confirm('Stop following this plan? Your logged workouts are kept.')) return;
       const st = S();
@@ -610,6 +670,6 @@
     resetPlans() { planIndex = null; indexPromise = null; planCache.clear(); const p = S().program; if (p) loadPlan(p.planId).then(() => C.softRender ? C.softRender() : C.render()).catch(() => {}); },
     trainCard, todayCard, summary, isCardio, renderBody,
     cachePlan(id, data) { planCache.set(id, data); },
-    daysAt,
+    daysAt, MAX_KEYS, pctText,
   };
 })();
