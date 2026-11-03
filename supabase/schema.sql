@@ -372,3 +372,62 @@ create policy "recipes client read" on public.recipes for select to authenticate
   using (published and coach_id = public.my_coach());
 grant select, insert, update, delete on public.recipes to authenticated;
 revoke all on public.recipes from anon;
+
+-- ---------- chat between coach and client ----------
+-- One conversation per client (client_id). Both the client and their coach can read it and post to it.
+create table if not exists public.messages (
+  id          uuid primary key default gen_random_uuid(),
+  client_id   uuid not null references public.profiles (id) on delete cascade,
+  sender_id   uuid not null default auth.uid() references public.profiles (id) on delete cascade,
+  body        text not null check (length(body) between 1 and 4000),
+  created_at  timestamptz not null default now(),
+  read_at     timestamptz
+);
+create index if not exists messages_thread on public.messages (client_id, created_at);
+alter table public.messages enable row level security;
+
+-- who may take part in a client's conversation: the client, or the client's coach
+create or replace function public.in_chat(p_client uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select p_client = auth.uid() and exists (select 1 from profiles where id = auth.uid() and coach_id is not null)
+      or exists (select 1 from profiles where id = p_client and coach_id = auth.uid());
+$$;
+
+drop policy if exists "messages read" on public.messages;
+create policy "messages read" on public.messages for select to authenticated
+  using (public.in_chat(client_id));
+drop policy if exists "messages send" on public.messages;
+create policy "messages send" on public.messages for insert to authenticated
+  with check (sender_id = auth.uid() and read_at is null and public.in_chat(client_id));
+drop policy if exists "messages delete own" on public.messages;
+create policy "messages delete own" on public.messages for delete to authenticated
+  using (sender_id = auth.uid());
+grant select, insert, delete on public.messages to authenticated;
+revoke all on public.messages from anon;
+
+-- mark the other person's messages in a conversation as read
+create or replace function public.mark_chat_read(p_client uuid) returns void
+language sql security definer set search_path = public as $$
+  update messages set read_at = now()
+  where client_id = p_client and sender_id <> auth.uid() and read_at is null and public.in_chat(p_client);
+$$;
+
+-- unread counts and latest message per conversation, for the caller
+create or replace function public.chat_summary()
+returns table (client_id uuid, unread bigint, last_body text, last_at timestamptz, last_sender uuid)
+language sql stable security definer set search_path = public as $$
+  select m.client_id,
+         count(*) filter (where m.sender_id <> auth.uid() and m.read_at is null),
+         (array_agg(m.body order by m.created_at desc))[1],
+         max(m.created_at),
+         (array_agg(m.sender_id order by m.created_at desc))[1]
+  from messages m
+  where public.in_chat(m.client_id)
+  group by m.client_id;
+$$;
+revoke all on function public.mark_chat_read(uuid) from public, anon;
+revoke all on function public.chat_summary() from public, anon;
+revoke all on function public.in_chat(uuid) from public, anon;
+grant execute on function public.mark_chat_read(uuid) to authenticated;
+grant execute on function public.chat_summary() to authenticated;
+grant execute on function public.in_chat(uuid) to authenticated;

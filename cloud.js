@@ -153,12 +153,14 @@
     if (window.Training) Training.resetPlans();
     clearInterval(pullIv);
     pullIv = setInterval(() => { if (document.visibilityState === 'visible') pull(); }, 60000);
+    if (window.Chat) Chat.onSignedIn();
     C.softRender();
   }
   function onSignedOut() {
     user = null; profile = null; coach = null; notes = []; cloudPlans = null;
     clearInterval(pullIv);
     if (window.Training) Training.resetPlans();
+    if (window.Chat) Chat.onSignedOut();
     C.softRender();
   }
   let profileError = '';
@@ -622,7 +624,8 @@
           c.nutrition && c.nutrition.profile ? `🥗 ${esc(({ cut: 'Cut', maintain: 'Maintain', build: 'Build' })[c.nutrition.profile.goal] || '')}${c.nutrition.profile.flagged ? ' ⚠️' : ''}` : '',
           c.shared_photos ? `📷 ${c.shared_photos}` : '', c.unread_notes ? `💬 ${c.unread_notes} unread` : ''].filter(Boolean).map((t) => `<span class="chip">${t}</span>`).join('')}</div>
         <div class="row client-actions"><button class="btn small primary" data-action="coach-view" data-id="${c.client_id}" data-name="${esc(name)}">Open</button>
-          <button class="btn small" data-action="coach-note" data-id="${c.client_id}" data-name="${esc(name)}">Message</button>
+          <button class="btn small" data-action="chat-with" data-id="${c.client_id}" data-name="${esc(name)}">💬 Chat${window.Chat && Chat.unread(c.client_id) ? ` (${Chat.unread(c.client_id)})` : ''}</button>
+          <button class="btn small" data-action="coach-note" data-id="${c.client_id}" data-name="${esc(name)}">Note</button>
           <button class="btn small" data-action="coach-targets" data-id="${c.client_id}" data-name="${esc(name)}">Targets</button>
           <button class="btn small" data-action="coach-access" data-id="${c.client_id}" data-name="${esc(name)}">Plans</button>
           <button class="btn small" data-action="coach-customize" data-id="${c.client_id}" data-name="${esc(name)}" data-plan="${esc((c.program && c.program.planId) || '')}">Customize</button>
@@ -693,7 +696,7 @@
     changed, settingsSection, saveName, todayCards, usesCloudPlans, fetchPlans, savePlan, deletePlan,
     canSharePhotos, sharePhoto, unsharePhoto, photoUrl,
     loadRecipes, saveRecipe, saveRecipes, deleteRecipe, recipes: () => recipeCache || [], refreshCoach: () => refreshCoach(),
-    get user() { return user; }, get profile() { return profile; },
+    get user() { return user; }, get profile() { return profile; }, get coach() { return coach; }, _sb: () => sb,
     get configured() { return !!sb; },
     // exposed for tests
     _toRecords: toRecords, _applyRecord: applyRecord,

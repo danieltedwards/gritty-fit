@@ -21,7 +21,7 @@
   const relDay = (iso) => { const diff = daysBetween(iso, todayISO()); return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : prettyDate(iso); };
   const byDateDesc = (a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || ''));
 
-  const APP_VERSION = '2026.11.04-h';
+  const APP_VERSION = '2026.11.04-i';
   // ---------- state ----------
   const DEFAULT_STATE = () => ({
     version: 1,
@@ -1401,10 +1401,11 @@
     document.querySelectorAll('.tabbar [data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === navTab));
     $('#back-btn').hidden = !PARENT[ui.tab];
     $('#back-btn').dataset.tab = PARENT[ui.tab] || '';
-    $('#back-btn').dataset.action = ui.tab === 'editor' ? 'ed-cancel' : 'goto';
+    $('#back-btn').dataset.action = ui.tab === 'editor' ? 'ed-cancel' : ui.tab === 'chat' ? 'chat-back' : 'goto';
     $('#view').innerHTML = (ui.viewAs ? `<div class="viewas"><span>👀 Viewing <strong>${esc(ui.viewAs.name)}</strong> · read-only</span><button class="btn small" data-action="exit-view-as">Exit</button></div>` : '') + views[ui.tab]();
     document.body.classList.toggle('viewing-as', !!ui.viewAs);
     Training.afterRender(ui.tab);
+    if (window.Chat) Chat.afterRender(ui.tab);
     if (ui.tab === 'body' && ui.bodySeg === 'photos') renderPhotos();
   }
 
@@ -1420,7 +1421,7 @@
   });
 
   // Re-render unless the person is mid-entry (open form or live workout), so syncs never steal focus
-  function softRender() { if (!modal.open && ui.tab !== 'session') render(); }
+  function softRender() { if (!modal.open && ui.tab !== 'session' && !(ui.tab === 'chat' && window.Chat && Chat.composing())) render(); }
   if (window.Cloud) Cloud.init({
     getState: () => S, replaceState: async (st) => { S = st; await DB.setState(S); }, defaultState: DEFAULT_STATE,
     save, saveLocal, render, softRender, toast, esc, todayISO, relDay, daysBetween, openModal, closeModal: () => modal.close(),
@@ -1429,6 +1430,7 @@
 
   if (window.Nutrition) Nutrition.init({ getState: () => S, save, render, esc, toast, todayISO, uid, openModal, closeModal: () => modal.close(), field, inNum, ui, actions, modalActions, mealOptions: (iso) => mealOptions(iso) });
   if (window.Recipes) Recipes.init({ esc, field, openModal, closeModal: () => modal.close(), toast, actions, modalActions, ui });
+  if (window.Chat) Chat.init({ esc, render, toast, setTab, relDay, ui, views, actions, TITLES, PARENT });
   if (window.Editor) Editor.init({ esc, render, toast, setTab, openModal, ui, views, actions, TITLES, PARENT });
 
   // ---------- app updates ----------
@@ -1461,7 +1463,7 @@
     try { const t = localStorage.getItem('gf-tab'); if (t && views[t]) ui.tab = t; } catch (_) { /* ignore */ }
     if (ui.tab === 'session' && !S.activeSession) ui.tab = 'train';
     if ((ui.tab === 'guide' && !ui.guidePlan) || ui.tab === 'plans') ui.tab = 'train';
-    if (ui.tab === 'coach' || ui.tab === 'editor') ui.tab = 'today';
+    if (ui.tab === 'coach' || ui.tab === 'editor' || ui.tab === 'chat') ui.tab = 'today';
     render();
     Training.preload();
     if (window.Cloud) Cloud.start().catch((e) => console.warn('cloud', e));
