@@ -21,7 +21,7 @@
   const relDay = (iso) => { const diff = daysBetween(iso, todayISO()); return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : prettyDate(iso); };
   const byDateDesc = (a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || ''));
 
-  const APP_VERSION = '2026.11.04-c';
+  const APP_VERSION = '2026.11.04-d';
   // ---------- state ----------
   const DEFAULT_STATE = () => ({
     version: 1,

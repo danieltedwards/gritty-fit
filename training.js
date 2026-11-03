@@ -84,7 +84,8 @@
   }
   const atWeek = (plan, week) => (plan && plan.schedule ? Object.assign({}, plan, { days: daysAt(plan, week) }) : plan);
   const instructionsHTML = (t) => (t ? `<div class="day-instr">${String(t).split(/\n+/).map((l) => `<p>${esc(l)}</p>`).join('')}</div>` : '');
-  const repRange = (reps) => { const m = String(reps).match(/\d+/g); return m ? { min: +m[0], max: +(m[1] || m[0]) } : null; };
+  // "8–12" → {min 8, max 12}; pyramids / drop sets ("20/15/10") and mixed schemes ("AMRAP, then 3×1") have no single range
+  const repRange = (reps) => { const r = String(reps); if (/[\/,]/.test(r)) return null; const m = r.match(/\d+/g); return m ? { min: +m[0], max: +(m[1] || m[0]) } : null; };
   const restSeconds = (rest) => {
     if (!rest) return 0;
     const s = String(rest).toLowerCase(), n = parseFloat(s);
@@ -138,6 +139,7 @@
       return `✅ All sets hit ${rr.max} last time. Add weight: try ${top + bump} ${u} and restart at ${rr.min} reps.`;
     }
     if (rr) return wk && wk.kb ? `Stay with the ${top} ${u} bells. Goal: more reps until every set reaches ${rr.max}.` : `Stay at ${top} ${u}. Goal: more reps until every set reaches ${rr.max}.`;
+    if (top) return `Heaviest set last time: ${top} ${u}. Beat at least one set from last time (more weight or more reps).`;
     return '';
   }
 
