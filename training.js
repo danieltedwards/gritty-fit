@@ -370,7 +370,7 @@
     h += gDays.map((d) => `<div class="card"><div class="card-head"><h2>${esc(d.label)}${d.optional ? ' · optional' : ''}</h2></div><div style="font-weight:800;font-size:18px">${esc(d.name)}</div>
       ${d.focus ? `<p class="sub"><em>${esc(d.focus)}</em></p>` : ''}${instructionsHTML(d.instructions)}
       ${d.warmup && plan.warmups && plan.warmups[d.warmup] ? `<p class="sub">Starts with the ${esc(plan.warmups[d.warmup].name)}.</p>` : ''}
-      ${d.blocks.map((b) => `${b.type === 'superset' || b.name ? `<div class="res-head">${esc(b.name || 'Superset')}</div>` : ''}<ul class="list">${b.exercises.map((ex, i) => `<li><div class="grow"><div class="title">${b.type === 'superset' ? String.fromCharCode(65 + i) + '. ' : ''}${esc(ex.name)}</div>
+      ${d.blocks.map((b) => `${b.type === 'superset' || b.name ? `<div class="res-head">${esc(b.name || 'Superset')}</div>` : ''}${b.note ? `<p class="sub" style="margin:2px 0 4px">${esc(b.note)}</p>` : ''}<ul class="list">${b.exercises.map((ex, i) => `<li><div class="grow"><div class="title">${b.type === 'superset' ? String.fromCharCode(65 + i) + '. ' : ''}${esc(ex.name)}</div>
         <div class="meta">${[ex.pct ? `${pctText(ex.pct)} of ${(MAX_KEYS[ex.of] || ex.of || 'max').toLowerCase()}${ex.of ? ' max' : ''}` : '', ex.tempo ? 'Tempo ' + ex.tempo : '', ex.rest ? 'Rest ' + ex.rest : '', ex.effort || ''].filter(Boolean).join(' · ')}</div>${ex.notes ? `<div class="meta ex-guide-note">${esc(ex.notes)}</div>` : ''}</div><span class="num">${prescription(ex)}</span></li>`).join('')}</ul>`).join('')}
       ${d.suggestions ? `<div>${d.suggestions.map((s) => `<span class="chip">${esc(s)}</span>`).join('')}</div>` : ''}</div>`).join('');
     h += (plan.sections || []).map((s) => `<details class="card guide-sec"><summary><strong>${esc(s.title)}</strong></summary><div class="guide-body">${renderBody(s.body)}</div></details>`).join('');
@@ -467,7 +467,7 @@
         h += `<div class="card block-card"><div class="card-head" style="margin-bottom:4px"><h2>${esc(b.name || 'Superset')}</h2></div>${b.note ? `<p class="sub" style="margin-top:0">${esc(b.note)}</p>` : ''}
           ${b.exercises.map((ex, i) => exerciseCard(withRegion(ex, day), as, wk, String.fromCharCode(65 + i))).join('')}</div>`;
       } else {
-        h += `<div class="card block-card">${b.name ? `<div class="card-head" style="margin-bottom:4px"><h2>${esc(b.name)}</h2></div>` : ''}${b.exercises.map((ex) => exerciseCard(withRegion(ex, day), as, wk)).join('')}</div>`;
+        h += `<div class="card block-card">${b.name ? `<div class="card-head" style="margin-bottom:4px"><h2>${esc(b.name)}</h2></div>` : ''}${b.note ? `<p class="sub" style="margin-top:0">${esc(b.note)}</p>` : ''}${b.exercises.map((ex) => exerciseCard(withRegion(ex, day), as, wk)).join('')}</div>`;
       }
     });
     if (day.freeform || as.extra.length) {
