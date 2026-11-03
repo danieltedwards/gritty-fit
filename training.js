@@ -84,7 +84,7 @@
   }
   const atWeek = (plan, week) => (plan && plan.schedule ? Object.assign({}, plan, { days: daysAt(plan, week) }) : plan);
   // ---- percentage-of-max loading (powerlifting, Olympic, tactical plans) ----
-  const MAX_KEYS = { squat: 'Back squat', bench: 'Bench press', deadlift: 'Deadlift', press: 'Overhead press', fsquat: 'Front squat', snatch: 'Snatch', clean: 'Clean', jerk: 'Jerk', cj: 'Clean & jerk', pullup: 'Weighted pull-up' };
+  const MAX_KEYS = { squat: 'Back squat', bench: 'Bench press', deadlift: 'Deadlift', press: 'Overhead press', fsquat: 'Front squat', snatch: 'Snatch', clean: 'Clean', jerk: 'Jerk', cj: 'Clean & jerk', pullup: 'Weighted pull-up', g2o: 'Ground to overhead', dbbench: 'Dumbbell bench (per hand)', pclean: 'Power clean', psnatch: 'Power snatch' };
   const pctRange = (p) => (Array.isArray(p) ? p : p != null && p !== '' ? [p, p] : null);
   const pctText = (p) => { const r = pctRange(p); if (!r) return ''; const f = (x) => Math.round(x * 1000) / 10; return r[0] === r[1] ? `${f(r[0])}%` : `${f(r[0])}–${f(r[1])}%`; };
   const roundLoad = (x) => { const step = unit() === 'kg' ? 2.5 : 5; return Math.round(x / step) * step; };
@@ -370,7 +370,7 @@
     const tgt = targetLoad(ex, planCache.get(as.planId));
     const schemeLoads = ex.scheme && ex.of && ex.scheme.some((g) => g.pct) ? ex.scheme.map((g) => ({ g, w: loadFor(g.pct, ex.of, planCache.get(as.planId)) })) : null;
     const hn = schemeLoads ? (schemeLoads.every((x) => x.w || !x.g.pct) ? `Targets: ${schemeLoads.map((x) => `${x.g.sets}×${x.g.reps}${x.w ? ' @ ' + x.w : ''}`).join(', ')} ${unit()}.` : `Enter your ${MAX_KEYS[ex.of] || ex.of} max on the Train tab to see your target weights.`)
-      : tgt && !tgt.missing ? `Target today: ${tgt.text} ${unit()} (${pctText(ex.pct)} of your ${MAX_KEYS[ex.of] || ex.of} max${(planCache.get(as.planId) || {}).trainingMax ? ' × training max' : ''}).`
+      : tgt && !tgt.missing ? `Target today: ${tgt.text} ${unit()} (${pctText(ex.pct)} of your ${MAX_KEYS[ex.of] || ex.of} max${(planCache.get(as.planId) || {}).trainingMax ? ' × training max' : ''}).${ex.of === 'pullup' ? ' That\'s bodyweight + added weight: subtract your bodyweight to get what to hang on the belt.' : ''}`
       : tgt && tgt.missing ? `Enter your ${MAX_KEYS[ex.of] || ex.of} max on the Train tab to see your target weight.` : hint(ex, last, wk2);
     const lastTxt = last ? last.sets.map((s) => (s.weight ? `${s.weight}×${s.reps ?? '–'}` : `${s.reps ?? '–'}`)).join(', ') : '';
     return `<div class="ex-card" id="ex-${ex.id}"><div class="ex-title">${letter ? `<span class="ex-letter">${letter}</span>` : ''}${esc(ex.name)}</div>
