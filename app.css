@@ -1,37 +1,39 @@
-/* Theme: field / military. Light = khaki & tan with olive drab; dark = black with olive and tan. */
+/* Theme: GRIT brand. Black, olive green #54632b, tan #9f935f, charcoal #3a3a3c. */
 :root {
-  --bg: #e8e3d3;
-  --surface: #f5f1e6;
-  --surface-2: #dcd5c1;
-  --text: #1b1e15;
-  --muted: #5e5f4d;
-  --line: #cbc3ab;
-  --accent: #4b5d2a;
-  --on-accent: #f5f1e6;
-  --accent-soft: #d9dfc0;
+  --bg: #ebe7da;
+  --surface: #f7f4ec;
+  --surface-2: #dfd9c6;
+  --text: #1a1a1b;
+  --muted: #5c5a50;
+  --line: #cfc8b2;
+  --accent: #54632b;
+  --on-accent: #f7f4ec;
+  --accent-soft: #dde2c6;
+  --tan: #9f935f;
   --good: #3d7a23;
   --warn: #a3362a;
   --blue: #4a6378;
-  --violet: #6b5a3a;
+  --violet: #3a3a3c;
   --radius: 16px;
   --tab-h: 64px;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0d0f0b;
-    --surface: #171a13;
-    --surface-2: #22261b;
-    --text: #e9e3d1;
-    --muted: #a19b85;
-    --line: #2f3427;
-    --accent: #6f8240;
-    --on-accent: #f1ecdc;
-    --accent-soft: #283019;
+    --bg: #000000;
+    --surface: #141415;
+    --surface-2: #222224;
+    --text: #ece8dc;
+    --muted: #a49e88;
+    --line: #3a3a3c;
+    --accent: #6a7c35;
+    --on-accent: #f3efe3;
+    --accent-soft: #262b17;
+    --tan: #9f935f;
     --good: #8fae5a;
     --warn: #d0644f;
     --blue: #8ea4b3;
-    --violet: #a08d64;
+    --violet: #3a3a3c;
     color-scheme: dark;
   }
 }
@@ -478,3 +480,8 @@ a.btn { text-decoration: none; }
 #wod-clock > button:not(.btn) { border: 0; background: rgb(255 255 255 / .2); color: inherit; padding: 8px 12px; border-radius: 10px; font-weight: 700; cursor: pointer; }
 .wod-clock-main { font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
 .wod-clock-sub { font-size: 12px; font-weight: 700; opacity: .8; }
+
+/* brand mark in the header (root screens only; the back arrow takes its place on inner screens) */
+.brand-mark { flex: none; display: block; }
+.brand-mark img { display: block; height: 34px; width: auto; }
+#back-btn:not([hidden]) + .brand-mark { display: none; }

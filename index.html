@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>GRIT</title>
   <meta name="description" content="Personal fitness tracker: calories, workouts, habits, journal, weigh-ins, body composition and progress photos.">
-  <meta name="theme-color" content="#1b1e15">
+  <meta name="theme-color" content="#000000">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="GRIT">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="icon" href="favicon.png" type="image/png">
   <link rel="apple-touch-icon" href="icon-180.png">
   <link rel="stylesheet" href="app.css">
 </head>
@@ -20,6 +20,7 @@
     <button class="icon-btn back-btn" id="back-btn" data-action="goto" data-tab="train" aria-label="Back" hidden>
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
     </button>
+    <picture class="brand-mark" aria-hidden="true"><source srcset="brand-g-tan.png" media="(prefers-color-scheme: dark)"><img src="brand-g-green.png" alt=""></picture>
     <div class="topbar-title">
       <div class="eyebrow" id="today-label"></div>
       <h1 id="view-title">Today</h1>
