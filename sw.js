@@ -4,7 +4,7 @@
 //   where GitHub Pages' 10-minute browser cache would otherwise serve old files.
 // - If there's no connection, the last copy saved here is used (works offline / in the gym basement).
 // Bump VERSION whenever app files change.
-const VERSION = 'grit-v35';
+const VERSION = 'grit-v36';
 const SHELL = ['./', 'index.html', 'app.css', 'db.js', 'charts.js', 'food-lookup.js', 'health.js', 'nutrition.js', 'training.js', 'cloud.js', 'editor.js', 'chat.js', 'notify.js', 'assign.js', 'recipes.js', 'app.js', 'config.js', 'vendor/supabase.js', 'plans/index.json', 'plans/pbbsw-phase-1.json', 'manifest.webmanifest', 'favicon.png', 'brand-g-green.png', 'brand-g-tan.png', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', (e) => {

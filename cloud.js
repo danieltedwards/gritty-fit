@@ -342,6 +342,31 @@
     form.elements.email.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); modalActions['cloud-send'](); } });
     form.elements.code.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); modalActions['cloud-verify'](); } });
   }
+
+  // Work out what a dropped-in JSON file holds: one plan, several plans, or recipes. Fixes small format
+  // differences (missing id, week-by-week plans without base days) and explains anything else.
+  function planFileContents(raw) {
+    if (!raw || typeof raw !== 'object') throw new Error("isn't a GRIT plan file");
+    if (raw.app === 'gritty-fit' && raw.state) throw new Error('is a GRIT backup, not a plan. Restore it from Settings → Backup instead');
+    const recipeList = Array.isArray(raw.recipes) ? raw.recipes : Array.isArray(raw) && raw.length && raw.every((r) => r && (r.ingredients || r.per)) ? raw : null;
+    if (recipeList) return { recipes: recipeList };
+    let list = Array.isArray(raw) ? raw : Array.isArray(raw.plans) && raw.plans.some((p) => p && (p.days || p.schedule)) ? raw.plans : raw.plan ? [raw.plan] : [raw];
+    if (Array.isArray(raw.plans) && !list.some((p) => p && (p.days || p.schedule))) throw new Error('is a plan list (index) without the plans themselves. Upload the individual GRIT-plan-….json files');
+    const slugify = (x) => String(x).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+    const plans = list.map((p) => {
+      if (!p || typeof p !== 'object') return null;
+      const d = Object.assign({}, p);
+      if (!d.name && d.title) d.name = d.title;
+      if ((!Array.isArray(d.days) || !d.days.length) && Array.isArray(d.schedule) && d.schedule[0] && Array.isArray(d.schedule[0].days)) d.days = JSON.parse(JSON.stringify(d.schedule[0].days));
+      if (!d.id && d.name) d.id = slugify(d.name);
+      d.schema = d.schema || 1;
+      const missing = [!d.name && 'a name', !(Array.isArray(d.days) && d.days.length) && 'workout days'].filter(Boolean);
+      if (missing.length) throw new Error(`isn't in GRIT's plan format (missing ${missing.join(' and ')}). If it's a program from somewhere else, send it to Claude to convert`);
+      return d;
+    }).filter(Boolean);
+    if (!plans.length) throw new Error("doesn't contain any plans");
+    return { plans };
+  }
   const modalActions = {
     'cloud-signin': () => { C.closeModal(); setTimeout(() => signInForm(), 0); },
     'cloud-send': async (b) => {
@@ -520,17 +545,23 @@
     'coach-plan-file': () => {
       const input = document.createElement('input'); input.type = 'file'; input.accept = 'application/json,.json'; input.multiple = true;
       input.onchange = async () => {
-        const done = [], failed = [];
+        const done = [], failed = [], notes = [];
         for (const f of input.files) {
           try {
-            const data = JSON.parse(await f.text());
-            if (!data.id || !data.name || !Array.isArray(data.days)) throw new Error('not a GRIT plan file');
-            const { error } = await sb.from('plans').upsert({ id: data.id, data, visibility: 'all', published: true });
-            if (error) throw error;
-            done.push(data.name);
-          } catch (e) { failed.push(`${f.name}: ${e.message}`); }
+            let raw;
+            try { raw = JSON.parse(await f.text()); } catch (_) { throw new Error('isn\'t a readable JSON file (it may have been changed when it was downloaded)'); }
+            const found = planFileContents(raw);
+            if (found.recipes) { const n = await Recipes.importData(found.recipes); notes.push(`${f.name}: ${n} recipes added to your Recipe library`); continue; }
+            for (const data of found.plans) {
+              const { error } = await sb.from('plans').upsert({ id: data.id, data, visibility: 'all', published: true });
+              if (error) throw error;
+              done.push(data.name);
+            }
+          } catch (e) { failed.push(`${f.name} ${e.message}`); }
         }
-        C.toast(failed.length ? `Uploaded ${done.length}. Failed: ${failed.join('; ')}` : done.length === 1 ? `${done[0]} uploaded` : `${done.length} plans uploaded`);
+        const msg = [done.length ? (done.length === 1 ? `${done[0]} uploaded` : `${done.length} plans uploaded`) : '', ...notes, failed.length ? `Not uploaded: ${failed.join('; ')}` : ''].filter(Boolean).join(' · ');
+        if (failed.length) C.openModal(`<h2>Upload results</h2>${done.length ? `<p>✓ ${esc(done.length === 1 ? done[0] + ' uploaded' : done.length + ' plans uploaded')}</p>` : ''}${notes.map((n) => `<p>✓ ${esc(n)}</p>`).join('')}<ul>${failed.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`, null, { hideSave: true });
+        else C.toast(msg || 'Nothing to upload');
         refreshCoach(); if (window.Training) Training.resetPlans();
       };
       input.click();

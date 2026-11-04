@@ -129,11 +129,7 @@
 
   // Upload: JSON array of recipes, or { recipes: [...] }. Each: name, servings?, tags?, ingredients?
   // ([{name, grams, per100:{k,p,c,f}}] or [{name, amount, kcal, p, c, f}]), instructions?, per? ({kcal,p,c,f} per serving)
-  function upload() {
-    const input = document.createElement('input'); input.type = 'file'; input.accept = 'application/json,.json';
-    input.onchange = async () => {
-      try {
-        const raw = JSON.parse(await input.files[0].text());
+  async function importData(raw) {
         const list = Array.isArray(raw) ? raw : raw.recipes;
         if (!Array.isArray(list) || !list.length) throw new Error('No recipes in that file');
         const rows = [];
@@ -149,7 +145,15 @@
           C.toast(`Uploading recipes… ${Math.min(i + 100, rows.length)} / ${rows.length}`);
           await Cloud.saveRecipes(rows.slice(i, i + 100));
         }
-        C.toast(`${rows.length} recipe${rows.length === 1 ? '' : 's'} added to your library`); Cloud.refreshCoach();
+        Cloud.refreshCoach();
+        return rows.length;
+  }
+  function upload() {
+    const input = document.createElement('input'); input.type = 'file'; input.accept = 'application/json,.json';
+    input.onchange = async () => {
+      try {
+        const n = await importData(JSON.parse(await input.files[0].text()));
+        C.toast(`${n} recipe${n === 1 ? '' : 's'} added to your library`);
       } catch (e) { C.toast('Upload failed: ' + e.message); }
     };
     input.click();
@@ -164,6 +168,6 @@
         'rcp-upload': upload,
       });
     },
-    section, perServing, open: (row) => editor(row || null),
+    section, perServing, importData, open: (row) => editor(row || null),
   };
 })();
