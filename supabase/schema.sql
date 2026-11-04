@@ -767,3 +767,30 @@ end;
 $$;
 drop trigger if exists assigned_notify on public.assigned_workouts;
 create trigger assigned_notify after insert or update of status on public.assigned_workouts for each row execute function public.on_assigned_notify();
+
+-- =====================================================================
+-- AI plan imports (PDF / Word / Excel / photo → GRIT plan), handled by the import-plan Edge Function
+-- =====================================================================
+create table if not exists public.plan_imports (
+  id          uuid primary key default gen_random_uuid(),
+  coach_id    uuid not null default auth.uid() references public.profiles (id) on delete cascade,
+  filename    text,
+  notes       text,
+  status      text not null default 'processing' check (status in ('processing', 'done', 'error', 'used')),
+  batch_id    text,
+  result      jsonb,
+  error       text,
+  tokens      int,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+create index if not exists plan_imports_coach on public.plan_imports (coach_id, created_at desc);
+alter table public.plan_imports enable row level security;
+drop policy if exists "imports coach" on public.plan_imports;
+create policy "imports coach" on public.plan_imports for select to authenticated using (coach_id = auth.uid());
+drop policy if exists "imports coach delete" on public.plan_imports;
+create policy "imports coach delete" on public.plan_imports for delete to authenticated using (coach_id = auth.uid());
+drop policy if exists "imports coach update" on public.plan_imports;
+create policy "imports coach update" on public.plan_imports for update to authenticated using (coach_id = auth.uid()) with check (coach_id = auth.uid());
+grant select, update, delete on public.plan_imports to authenticated;
+revoke all on public.plan_imports from anon;

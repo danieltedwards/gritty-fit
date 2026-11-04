@@ -21,7 +21,7 @@
   const relDay = (iso) => { const diff = daysBetween(iso, todayISO()); return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : prettyDate(iso); };
   const byDateDesc = (a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || ''));
 
-  const APP_VERSION = '2026.11.05-h';
+  const APP_VERSION = '2026.11.05-i';
   // ---------- state ----------
   const DEFAULT_STATE = () => ({
     version: 1,
@@ -1481,6 +1481,7 @@
   if (window.Recipes) Recipes.init({ esc, field, openModal, closeModal: () => modal.close(), toast, actions, modalActions, ui });
   if (window.Chat) Chat.init({ esc, render, toast, setTab, relDay, ui, views, actions, TITLES, PARENT });
   if (window.Assign) Assign.init({ esc, render, softRender: () => softRender(), toast, setTab, field, openModal, closeModal: () => modal.close(), todayISO, addDays, daysBetween, prettyDate, relDay, ui, actions, modalActions });
+  if (window.Import) Import.init({ esc, render, toast, field, openModal, closeModal: () => modal.close(), ui, actions });
   if (window.Notify) Notify.init({ esc, render, toast, setTab, field, openModal, closeModal: () => modal.close(), ui, views, actions, modalActions, TITLES, PARENT });
   if (window.Editor) Editor.init({ esc, render, toast, setTab, openModal, ui, views, actions, TITLES, PARENT });
 

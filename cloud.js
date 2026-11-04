@@ -164,6 +164,7 @@
     if (window.Training) Training.resetPlans();
     if (window.Chat) Chat.onSignedOut();
     if (window.Assign) Assign.onSignedOut();
+    if (window.Import) Import.reset();
     if (window.Notify) Notify.onSignedOut();
     C.softRender();
   }
@@ -621,10 +622,16 @@
       } catch (e) { C.toast('Upload failed: ' + e.message); }
     },
     'coach-plan-file': () => {
-      const input = document.createElement('input'); input.type = 'file'; input.accept = 'application/json,.json'; input.multiple = true;
+      const input = document.createElement('input'); input.type = 'file'; input.multiple = true;
+      input.accept = 'application/json,.json,application/pdf,.pdf,.docx,.xlsx,.xlsm,.csv,.tsv,.txt,.md,image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp,.heic,.doc,.xls';
       input.onchange = async () => {
+        const all = [...input.files];
+        const jsonFiles = all.filter((f) => /\.json$/i.test(f.name) || f.type === 'application/json');
+        const aiFiles = all.filter((f) => !jsonFiles.includes(f));
+        if (aiFiles.length && window.Import) setTimeout(() => Import.start(aiFiles), jsonFiles.length ? 2500 : 0);
+        if (!jsonFiles.length) return;
         const done = [], failed = [], notes = [];
-        for (const f of input.files) {
+        for (const f of jsonFiles) {
           try {
             let raw;
             try { raw = JSON.parse(await f.text()); } catch (_) { throw new Error('isn\'t a readable JSON file (it may have been changed when it was downloaded)'); }
@@ -756,6 +763,7 @@
     const notUploaded = builtin.filter((b) => !plans.some((p) => p.id === b.id));
     const templates = plans.filter((p) => !p.data.forClient), custom = plans.filter((p) => p.data.forClient);
     const clientName = (id) => { const c = clients.find((x) => x.client_id === id); return c ? (c.full_name || c.email) : 'former client'; };
+    if (window.Import) h += Import.card();
     h += `<div class="card"><div class="card-head"><h2>Plan library · ${templates.length}</h2><span class="row" style="gap:6px"><button class="btn small primary" data-action="coach-plan-new">+ New</button><button class="btn small" data-action="coach-plan-file">Upload</button></span></div>`;
     h += templates.length ? templates.map((p) => `<div class="client"><div class="title" style="font-weight:800">${esc(p.data.name)}</div><div class="sub" style="font-size:13px">${esc(p.data.phase || '')} · ${p.data.weeks || '?'} weeks · ${(p.data.days || []).length} days${p.data.schedule ? ' · week by week' : ''}</div>
         <div class="row" style="margin-top:8px">
