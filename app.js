@@ -21,7 +21,7 @@
   const relDay = (iso) => { const diff = daysBetween(iso, todayISO()); return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : prettyDate(iso); };
   const byDateDesc = (a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || ''));
 
-  const APP_VERSION = '2026.11.05-d';
+  const APP_VERSION = '2026.11.05-e';
   // ---------- state ----------
   const DEFAULT_STATE = () => ({
     version: 1,
@@ -66,6 +66,9 @@
   let toastTimer;
   function toast(msg) {
     const t = $('#toast');
+    // an open pop-up sits on top of everything, so show the message inside it while it's open
+    const dlg = document.getElementById('modal'), host = dlg && dlg.open ? dlg : document.body;
+    if (t.parentNode !== host) host.appendChild(t);
     t.textContent = msg; t.onclick = null; t.style.pointerEvents = '';
     t.classList.add('show');
     clearTimeout(toastTimer);

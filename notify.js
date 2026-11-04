@@ -217,7 +217,10 @@
           ${C.field('VAPID_PRIVATE_KEY (keep secret)', `<textarea readonly rows="2" onclick="this.select()">${esc(priv)}</textarea>`)}
           ${C.field('VAPID_SUBJECT', `<textarea readonly rows="1" onclick="this.select()">mailto:${esc((Cloud.user && Cloud.user.email) || 'you@example.com')}</textarea>`)}
           <p class="hint">Then: deploy the <code>send-push</code> function and add the database webhook (steps in <code>supabase/functions/send-push/README.md</code>), and turn on notifications for this device.</p>`, null, { hideSave: true }), 0);
-      } catch (e) { C.toast('Couldn\'t make keys: ' + (e.message || e)); }
+      } catch (e) {
+        const m = String((e && e.message) || e);
+        C.toast(/set_app_config|function|schema cache|does not exist/i.test(m) ? 'Run the notifications SQL in Supabase first, then try again.' : 'Couldn\'t make keys: ' + m);
+      }
     },
     'push-test': async () => { const { error } = await sb.rpc('notify_test'); C.toast(error ? 'Test failed: ' + error.message : 'Test sent. It should arrive in a few seconds'); },
   };
