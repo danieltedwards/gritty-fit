@@ -37,8 +37,8 @@ Deno.serve(async (req) => {
       await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, msg, { TTL: 60 * 60 * 24 });
       sent++;
     } catch (err: any) {
-      // the phone unsubscribed or the app was removed: forget this device
-      if (err && (err.statusCode === 404 || err.statusCode === 410)) await db.from('push_subscriptions').delete().eq('endpoint', s.endpoint);
+      // the phone unsubscribed, the app was removed, or the keys were remade: forget this device
+      if (err && (err.statusCode === 403 || err.statusCode === 404 || err.statusCode === 410)) await db.from('push_subscriptions').delete().eq('endpoint', s.endpoint);
     }
   }
   return new Response(JSON.stringify({ sent }), { status: 200, headers: { 'Content-Type': 'application/json' } });

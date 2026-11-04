@@ -686,3 +686,25 @@ end;
 $$;
 revoke all on function public.notify_test() from public, anon;
 grant execute on function public.notify_test() to authenticated;
+
+-- Small app-wide settings the app can read (e.g. the public web-push key). Only the coach can change them.
+create table if not exists public.app_config (
+  key         text primary key,
+  value       text,
+  updated_at  timestamptz not null default now()
+);
+alter table public.app_config enable row level security;
+drop policy if exists "app_config read" on public.app_config;
+create policy "app_config read" on public.app_config for select to authenticated using (true);
+grant select on public.app_config to authenticated;
+revoke all on public.app_config from anon;
+create or replace function public.set_app_config(p_key text, p_value text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_coach() then raise exception 'Only the coach can change app settings'; end if;
+  insert into app_config (key, value, updated_at) values (p_key, p_value, now())
+    on conflict (key) do update set value = excluded.value, updated_at = now();
+end;
+$$;
+revoke all on function public.set_app_config(text, text) from public, anon;
+grant execute on function public.set_app_config(text, text) to authenticated;

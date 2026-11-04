@@ -64,7 +64,16 @@
   }
 
   // ---------- phone notifications ----------
-  const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && !!(window.GRIT_CONFIG && GRIT_CONFIG.vapidPublicKey);
+  // the public web-push key lives in the database (app_config), set once by the coach in Notification settings
+  let vapidKey = null;
+  async function loadVapid() {
+    const { data } = await sb.from('app_config').select('value').eq('key', 'vapid_public_key').maybeSingle();
+    vapidKey = (data && data.value) || null;
+    return vapidKey;
+  }
+  const b64u = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const browserCanPush = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  const pushSupported = () => browserCanPush() && !!vapidKey;
   const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const standalone = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
   function urlB64(s) { const pad = '='.repeat((4 - (s.length % 4)) % 4); const b = atob((s + pad).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(b, (c) => c.charCodeAt(0)); }
@@ -74,12 +83,15 @@
     return reg ? reg.pushManager.getSubscription() : null;
   }
   async function enablePush() {
+    if (!vapidKey) await loadVapid();
+    if (browserCanPush() && !vapidKey) throw new Error('Phone notifications aren\'t set up yet. ' + (Cloud.profile && Cloud.profile.role === 'coach' ? 'Use "Set up phone notifications" below first.' : 'Your coach needs to finish setting them up.'));
     if (!pushSupported()) throw new Error(isIOS() && !standalone() ? 'On iPhone, add GRIT to your Home Screen first (Share → Add to Home Screen), then open it from there.' : 'This browser can\'t show notifications.');
     const perm = await Notification.requestPermission();
     if (perm !== 'granted') throw new Error('Notifications are blocked. Allow them for this site in your phone or browser settings.');
     const reg = await navigator.serviceWorker.ready;
     let sub = await reg.pushManager.getSubscription();
-    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64(GRIT_CONFIG.vapidPublicKey) });
+    if (sub && sub.options && sub.options.applicationServerKey && b64u(sub.options.applicationServerKey) !== vapidKey) { await sub.unsubscribe().catch(() => {}); sub = null; }
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64(vapidKey) });
     const j = sub.toJSON();
     const { error } = await sb.from('push_subscriptions').upsert({ endpoint: j.endpoint, user_id: me(), p256dh: j.keys.p256dh, auth: j.keys.auth, ua: navigator.userAgent.slice(0, 200) }, { onConflict: 'endpoint' });
     if (error) throw new Error(error.message);
@@ -144,15 +156,21 @@
   function timeIn(name, val) { return `<input type="time" name="${name}" value="${esc(val || '')}">`; }
   async function openSettings() {
     const p = st.prefs || await loadPrefs();
+    await loadVapid().catch(() => {});
+    const coachSetup = Cloud.profile && Cloud.profile.role === 'coach' ? `<div class="card" style="background:var(--surface-2)"><div><strong>Coach setup: phone notification keys</strong></div>
+      <div class="sub" style="margin:2px 0 8px">${vapidKey ? 'Set up ✓ (only make new keys if something is broken; everyone then turns notifications on again).' : 'One-time step before anyone can get phone notifications.'}</div>
+      <button class="btn small ${vapidKey ? '' : 'primary'}" data-modal-action="vapid-gen">${vapidKey ? 'Make new keys' : 'Set up phone notifications'}</button></div>` : '';
     const sub = await currentSub().catch(() => null);
     const perm = 'Notification' in window ? Notification.permission : 'unsupported';
-    const status = !pushSupported() ? (isIOS() && !standalone() ? 'Add GRIT to your Home Screen to get phone notifications on iPhone.' : 'This browser can\'t show phone notifications. You\'ll still see them in the bell.')
+    const status = browserCanPush() && !vapidKey ? 'Not set up yet' + (Cloud.profile && Cloud.profile.role === 'coach' ? ': use the coach setup above.' : ': your coach is finishing the setup.')
+      : !pushSupported() ? (isIOS() && !standalone() ? 'Add GRIT to your Home Screen to get phone notifications on iPhone.' : 'This browser can\'t show phone notifications. You\'ll still see them in the bell.')
       : perm === 'denied' ? 'Blocked in your phone/browser settings. Allow notifications for this site, then try again.'
       : sub ? 'On for this device ✓' : 'Off for this device.';
     const rem = (type) => (p.reminders || []).find((r) => r.type === type) || REMINDERS.find((r) => r.type === type);
     C.openModal(`<h2>Notifications</h2>
       <div class="card" style="background:var(--surface-2)"><div><strong>Phone notifications</strong></div><div class="sub" style="margin:2px 0 8px">${esc(status)}</div>
         <div class="row">${pushSupported() && perm !== 'denied' ? (sub ? '<button class="btn small" data-modal-action="push-off">Turn off on this device</button><button class="btn small" data-modal-action="push-test">Send a test</button>' : '<button class="btn small primary" data-modal-action="push-on">Turn on for this device</button>') : ''}</div></div>
+      ${coachSetup}
       <div class="res-head">Notify me about</div>
       ${TYPES.map(([k, l]) => `<label class="ed-check" style="display:flex;margin:6px 0"><input type="checkbox" name="t_${k}" ${p.types && p.types[k] === false ? '' : 'checked'}><span>${l}</span></label>`).join('')}
       <div class="res-head">Quiet hours</div>
@@ -183,6 +201,24 @@
   const modalActions = {
     'push-on': async () => { try { await enablePush(); st.hasSub = true; C.toast('Phone notifications on 🔔'); C.closeModal(); setTimeout(openSettings, 0); } catch (e) { C.toast(e.message || String(e)); } },
     'push-off': async () => { await disablePush(); st.hasSub = false; C.toast('Phone notifications off for this device'); C.closeModal(); setTimeout(openSettings, 0); },
+    'vapid-gen': async () => {
+      if (vapidKey && !confirm('Make new keys? Everyone (you included) will need to turn phone notifications on again.')) return;
+      try {
+        const kp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign']);
+        const pub = b64u(await crypto.subtle.exportKey('raw', kp.publicKey));
+        const priv = (await crypto.subtle.exportKey('jwk', kp.privateKey)).d;
+        const { error } = await sb.rpc('set_app_config', { p_key: 'vapid_public_key', p_value: pub });
+        if (error) throw new Error(error.message);
+        vapidKey = pub;
+        C.closeModal();
+        setTimeout(() => C.openModal(`<h2>Finish in Supabase</h2>
+          <p style="margin-top:0">Your keys are made and the public one is saved. Copy these into <strong>Supabase → Edge Functions → Secrets</strong> now. The private key is shown only this once and isn't stored anywhere else.</p>
+          ${C.field('VAPID_PUBLIC_KEY', `<textarea readonly rows="3" onclick="this.select()">${esc(pub)}</textarea>`)}
+          ${C.field('VAPID_PRIVATE_KEY (keep secret)', `<textarea readonly rows="2" onclick="this.select()">${esc(priv)}</textarea>`)}
+          ${C.field('VAPID_SUBJECT', `<textarea readonly rows="1" onclick="this.select()">mailto:${esc((Cloud.user && Cloud.user.email) || 'you@example.com')}</textarea>`)}
+          <p class="hint">Then: deploy the <code>send-push</code> function and add the database webhook (steps in <code>supabase/functions/send-push/README.md</code>), and turn on notifications for this device.</p>`, null, { hideSave: true }), 0);
+      } catch (e) { C.toast('Couldn\'t make keys: ' + (e.message || e)); }
+    },
     'push-test': async () => { const { error } = await sb.rpc('notify_test'); C.toast(error ? 'Test failed: ' + error.message : 'Test sent. It should arrive in a few seconds'); },
   };
 
@@ -211,9 +247,11 @@
       st.items = null; st.prefs = null;
       await refreshCount();
       loadPrefs().catch(() => {});
+      await loadVapid().catch(() => {});
       currentSub().then((s) => {
         st.hasSub = !!s;
         // re-save this device's subscription in case it changed or belonged to the previous account
+        if (s && vapidKey && s.options && s.options.applicationServerKey && b64u(s.options.applicationServerKey) !== vapidKey && Notification.permission === 'granted') { enablePush().catch(() => {}); return; }
         if (s) { const j = s.toJSON(); sb.from('push_subscriptions').upsert({ endpoint: j.endpoint, user_id: me(), p256dh: j.keys.p256dh, auth: j.keys.auth, ua: navigator.userAgent.slice(0, 200) }, { onConflict: 'endpoint' }).then(() => {}); }
       }).catch(() => {});
       if (st.pendingGo) { const g = st.pendingGo; st.pendingGo = null; setTimeout(() => go(g, g.nid), 0); }
