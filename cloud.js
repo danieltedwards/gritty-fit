@@ -558,6 +558,7 @@
       C.toast('Loading…');
       try {
         const st = await loadClientState(el.dataset.id);
+        if (window.Assign && Assign.loadFor) { try { await Assign.loadFor(el.dataset.id); } catch (_) { /* still show the rest */ } }
         C.enterViewAs(st, el.dataset.name);
       } catch (e) { C.toast('Couldn\'t load: ' + e.message); }
     },

@@ -3,7 +3,8 @@
 // the normal workout logger, and it lands in their history (optionally counting as a day of their plan).
 (function () {
   let C, sb = null;
-  const st = { list: [], loaded: false, draft: null };
+  const st = { list: [], loaded: false, draft: null, view: [] };
+  const L = () => (C && C.ui.viewAs ? st.view : st.list); // coach "view as client" shows that client's sent workouts
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const getSb = () => sb || (sb = window.Cloud && Cloud._sb ? Cloud._sb() : null);
   const me = () => window.Cloud && Cloud.user && Cloud.user.id;
@@ -11,6 +12,14 @@
   const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'x';
 
   // ---------- client: load + show ----------
+  // coach: load one client's sent workouts for the read-only "view as client" screen
+  async function loadFor(clientId) {
+    st.view = [];
+    if (!getSb() || !clientId) return;
+    const since = new Date(Date.now() - 45 * 864e5).toISOString();
+    const { data, error } = await sb.from('assigned_workouts').select('id,title,day,note,for_date,replaces,status,done_at,created_at').eq('client_id', clientId).gte('created_at', since).order('created_at', { ascending: false }).limit(50);
+    if (!error) st.view = (data || []).map((a) => Object.assign(a, { for_date: a.for_date ? String(a.for_date).slice(0, 10) : null }));
+  }
   async function load() {
     if (!getSb() || !me() || isCoach()) { st.list = []; st.loaded = true; return; }
     const since = new Date(Date.now() - 45 * 864e5).toISOString();
@@ -22,25 +31,25 @@
   // pending workouts that belong on a date: dated ones on their date; undated (and overdue within a week) on today
   function pendingOn(iso) {
     const t = today();
-    return st.list.filter((a) => a.status === 'pending' && (a.for_date ? a.for_date === iso || (iso === t && a.for_date < t && C.daysBetween(a.for_date, t) <= 7) : iso === t));
+    return L().filter((a) => a.status === 'pending' && (a.for_date ? a.for_date === iso || (iso === t && a.for_date < t && C.daysBetween(a.for_date, t) <= 7) : iso === t));
   }
   const dateLbl = (a) => (a.for_date ? (a.for_date === today() ? 'Today' : a.for_date < today() ? `Was for ${C.prettyDate(a.for_date, { weekday: 'short', month: 'short', day: 'numeric' })}` : C.prettyDate(a.for_date, { weekday: 'short', month: 'short', day: 'numeric' })) : 'Any day');
   function itemHTML(a) {
     const names = ((a.day && a.day.blocks) || []).flatMap((b) => (b.exercises || []).map((e) => e.name));
     return `<div class="entry planned assign-item"><div class="row" style="flex-wrap:nowrap"><div style="flex:1;min-width:0"><div class="meta">From your coach · ${esc(dateLbl(a))}${a.replaces ? ' · counts as ' + esc(a.replaces.label || 'a plan day') : ''}</div>
       <strong>${esc(a.title)}</strong></div>
-      <button class="btn small primary" style="flex:none" data-action="assign-start" data-id="${a.id}">Start</button></div>
+      ${C.ui.viewAs ? '' : `<button class="btn small primary" style="flex:none" data-action="assign-start" data-id="${a.id}">Start</button>`}</div>
       ${a.note ? `<p class="sub" style="margin:4px 0 0">“${esc(a.note)}”</p>` : ''}
       ${names.length ? `<p class="sub" style="margin:4px 0 0">${esc(names.slice(0, 8).join(' · '))}${names.length > 8 ? ' …' : ''}</p>` : a.day && a.day.instructions ? `<p class="sub" style="margin:4px 0 0">${esc(String(a.day.instructions).slice(0, 140))}</p>` : ''}
-      <button class="link-btn" data-action="assign-skip" data-id="${a.id}" style="padding:4px 0 0;font-size:13px">Not today</button></div>`;
+      ${C.ui.viewAs ? '' : `<button class="link-btn" data-action="assign-skip" data-id="${a.id}" style="padding:4px 0 0;font-size:13px">Not today</button>`}</div>`;
   }
   function card() {
-    if (!st.loaded) { if (getSb() && me() && !isCoach()) load().then(() => { if (st.list.length) C.render(); }); return ''; }
+    if (!st.loaded && !C.ui.viewAs) { if (getSb() && me() && !isCoach()) load().then(() => { if (st.list.length) C.render(); }); return ''; }
     const t = today();
-    const items = st.list.filter((a) => a.status === 'pending' && (!a.for_date || a.for_date <= t) && !(a.for_date && C.daysBetween(a.for_date, t) > 7));
-    const upcoming = st.list.filter((a) => a.status === 'pending' && a.for_date && a.for_date > t);
+    const items = L().filter((a) => a.status === 'pending' && (!a.for_date || a.for_date <= t) && !(a.for_date && C.daysBetween(a.for_date, t) > 7));
+    const upcoming = L().filter((a) => a.status === 'pending' && a.for_date && a.for_date > t);
     if (!items.length && !upcoming.length) return '';
-    return `<div class="card assign-card"><div class="card-head"><h2>From your coach</h2></div>${items.map(itemHTML).join('')}
+    return `<div class="card assign-card"><div class="card-head"><h2>${C.ui.viewAs ? 'Workouts you sent' : 'From your coach'}</h2></div>${items.map(itemHTML).join('')}
       ${upcoming.length ? `<p class="sub" style="margin:8px 0 0">Coming up: ${upcoming.map((a) => `${esc(a.title)} (${esc(dateLbl(a))})`).join(', ')}</p>` : ''}</div>`;
   }
 
@@ -206,6 +215,7 @@
     onSignedIn() { st.loaded = false; st.list = []; load().then(() => { if (st.list.length) C.render(); }); },
     onSignedOut() { st.list = []; st.loaded = false; },
     card,
+    loadFor,
     pendingOn,
     itemHTML,
     async complete(id, workoutId) {
