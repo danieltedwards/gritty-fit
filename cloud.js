@@ -343,6 +343,83 @@
     form.elements.code.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); modalActions['cloud-verify'](); } });
   }
 
+  // Workout/program files made by other tools (e.g. ChatGPT): {title, sections:[{name, format, rounds,
+  // exercises|stations:[{name|exercise, reps|distance|duration…, sets, cue}]}]} or {weeks:[{days:[…]}]}.
+  // Turned into a GRIT plan so it can be uploaded; the coach can tidy it in the plan editor.
+  function adaptForeign(raw) {
+    const slugify = (x) => String(x).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50) || 'x';
+    const listOf = (o) => (o && (o.exercises || o.stations || o.movements || o.items || o.moves)) || null;
+    const secsOf = (o) => (o && (o.sections || o.blocks || o.parts || o.segments)) || null;
+    const qty = (e) => {
+      const r = e.reps ?? e.rep ?? e.distance ?? e.calories ?? e.time ?? e.duration ?? null;
+      if (r != null && r !== '') return String(r);
+      if (e.duration_minutes) return e.duration_minutes + ' min';
+      if (e.duration_seconds || e.seconds) return (e.duration_seconds || e.seconds) + ' sec';
+      return 'as written';
+    };
+    const isEasy = (n) => /warm|cool|stretch|mobility|recovery|prep|activation/i.test(n || '');
+    function toDay(o, i, plan) {
+      if (typeof o === 'string') {
+        // a workout written as text: reuse the quick-workout reader
+        const p = window.Assign && Assign.parseText ? Assign.parseText(o) : { blocks: [], instructions: o };
+        return Object.assign({ id: `d${i + 1}`, label: `Day ${i + 1}`, name: o.split(/\n/)[0].slice(0, 60) || `Day ${i + 1}`, region: 'full', blocks: p.blocks }, p.instructions ? { instructions: p.instructions } : {}, p.blocks.length ? {} : { freeform: true });
+      }
+      const used = {}, uid = (n) => { let id = slugify(n); used[id] = (used[id] || 0) + 1; return used[id] > 1 ? `${id}-${used[id]}` : id; };
+      const blocks = [], instr = [];
+      const name = o.title || o.name || o.focus || `Day ${i + 1}`;
+      const secs = secsOf(o) || (listOf(o) ? [{ name: '', exercises: listOf(o) }] : []);
+      let wu = null;
+      secs.forEach((sec) => {
+        const items = listOf(sec) || [];
+        const label = sec.name || sec.title || '';
+        const fmtTxt = [sec.format, sec.scheme, sec.type].filter((x) => typeof x === 'string').join(' · ');
+        const lines = items.map((e) => `${qty(e) !== 'as written' ? qty(e) + ' ' : ''}${e.name || e.exercise || e.movement || ''}${e.cue || e.notes ? ` (${e.cue || e.notes})` : ''}`);
+        if (isEasy(label)) {
+          if (/warm|prep|activation/i.test(label) && !wu) {
+            wu = { name: label || 'Warm-up', note: [fmtTxt, sec.instructions, sec.note].filter(Boolean).join('. '), items: items.map((e) => ({ name: e.name || e.exercise || e.movement || 'Move', dose: qty(e) === 'as written' ? '' : qty(e) })) };
+          } else instr.push(`${label}${sec.duration_minutes ? ` (${sec.duration_minutes} min)` : ''}: ${lines.join(' · ')}`);
+          return;
+        }
+        if (!items.length && typeof sec === 'string') { instr.push(sec); return; }
+        if (!items.length) { if (label || sec.instructions) instr.push([label, sec.instructions || sec.note].filter(Boolean).join(': ')); return; }
+        const rounds = +sec.rounds || +sec.sets || 1;
+        const every = /every\s*minute|emom/i.test(fmtTxt + ' ' + label);
+        const mins = sec.duration_minutes || (every ? rounds * items.length : null);
+        const head = [label, every ? `EMOM x ${mins || rounds * items.length} min` : fmtTxt && !/^\d+\s*rounds?/i.test(fmtTxt) ? fmtTxt : rounds > 1 ? `${rounds} rounds` : ''].filter(Boolean).join(' · ');
+        const exs = items.map((e) => {
+          const nm = String(e.name || e.exercise || e.movement || 'Exercise').trim();
+          const x = { id: uid(nm), name: nm, sets: +e.sets || (every ? rounds : rounds), reps: qty(e).replace(/-/g, '–'), role: 'accessory' };
+          const n = [e.cue, e.notes, e.note, e.load ? 'Load: ' + e.load : '', e.weight ? 'Load: ' + e.weight : '', e.tempo ? 'Tempo ' + e.tempo : ''].filter(Boolean).join('. ');
+          if (n) x.notes = n;
+          if (e.rest) x.rest = String(e.rest);
+          if (/each|per side|per leg|per arm/i.test(x.reps)) x.each = true;
+          return x;
+        });
+        const note = [sec.instructions, sec.note, sec.work_target_seconds ? `Work ${sec.work_target_seconds} sec` : '', sec.rest_target_seconds ? `Rest ${sec.rest_target_seconds} sec` : ''].filter(Boolean).map((x) => String(x).trim().replace(/\.+$/, '')).join('. ') + '.';
+        blocks.push(Object.assign({ type: exs.length > 1 ? 'superset' : 'single', name: head || undefined, exercises: exs }, note ? { note } : {}, sec.rest ? { rest: String(sec.rest) } : {}));
+      });
+      const day = { id: `d${i + 1}`, label: o.label || `Day ${i + 1}`, name, region: 'full', blocks };
+      if (instr.length) day.instructions = instr.join('\n');
+      if (wu) { const k = `wu-${i + 1}`; plan.warmups[k] = wu; day.warmup = k; }
+      if (!blocks.length) day.freeform = true;
+      return day;
+    }
+    const title = raw.title || raw.name || raw.program || raw.program_name || 'Imported plan';
+    const plan = { schema: 1, id: slugify(title), name: String(title), coach: '', phase: '', weeks: 1, daysPerWeek: '1', tags: ['Imported'], warmups: {},
+      summary: raw.description || raw.summary || raw.goal || (raw.duration_minutes || raw.total_duration_minutes ? `${raw.total_duration_minutes || raw.duration_minutes}-minute session.` : ''), days: [] };
+    if (Array.isArray(raw.equipment) && raw.equipment.length) plan.summary = `${plan.summary} Equipment: ${raw.equipment.join(', ')}.`.trim();
+    const weeks = Array.isArray(raw.weeks) ? raw.weeks : null;
+    const dayList = (w) => (w && (w.days || w.workouts || w.sessions)) || null;
+    if (weeks && weeks.some(dayList)) {
+      plan.schedule = weeks.map((w, wi) => ({ weeks: [+w.week || wi + 1], days: (dayList(w) || []).map((d, i) => toDay(d, i, plan)) }));
+      plan.weeks = plan.schedule.length; plan.days = plan.schedule[0].days; plan.daysPerWeek = String(plan.days.length);
+    } else if (dayList(raw)) {
+      plan.days = dayList(raw).map((d, i) => toDay(d, i, plan)); plan.daysPerWeek = String(plan.days.length); plan.weeks = +raw.weeks_count || +raw.length_weeks || 4;
+    } else if (secsOf(raw) || listOf(raw)) {
+      plan.days = [toDay(raw, 0, plan)]; plan.subtitle = 'Single workout';
+    } else return null;
+    return plan.days.length ? plan : null;
+  }
   // Work out what a dropped-in JSON file holds: one plan, several plans, or recipes. Fixes small format
   // differences (missing id, week-by-week plans without base days) and explains anything else.
   function planFileContents(raw) {
@@ -358,6 +435,7 @@
       const d = Object.assign({}, p);
       if (!d.name && d.title) d.name = d.title;
       if ((!Array.isArray(d.days) || !d.days.length) && Array.isArray(d.schedule) && d.schedule[0] && Array.isArray(d.schedule[0].days)) d.days = JSON.parse(JSON.stringify(d.schedule[0].days));
+      if (!(Array.isArray(d.days) && d.days.length)) { const ad = adaptForeign(p); if (ad) return ad; }
       if (!d.id && d.name) d.id = slugify(d.name);
       d.schema = d.schema || 1;
       const missing = [!d.name && 'a name', !(Array.isArray(d.days) && d.days.length) && 'workout days'].filter(Boolean);
