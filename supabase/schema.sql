@@ -708,3 +708,62 @@ end;
 $$;
 revoke all on function public.set_app_config(text, text) from public, anon;
 grant execute on function public.set_app_config(text, text) to authenticated;
+
+-- =====================================================================
+-- One-off workouts the coach sends a client (outside their normal plan)
+-- =====================================================================
+create table if not exists public.assigned_workouts (
+  id          uuid primary key default gen_random_uuid(),
+  coach_id    uuid not null default auth.uid() references public.profiles (id) on delete cascade,
+  client_id   uuid not null references public.profiles (id) on delete cascade,
+  title       text not null check (length(title) between 1 and 120),
+  day         jsonb not null,          -- same shape as a plan day: {name, blocks:[…], instructions, …}
+  note        text,
+  for_date    date,                    -- null = any day
+  replaces    jsonb,                   -- {"planId":…, "dayId":…, "label":…} when it counts as a plan day
+  status      text not null default 'pending' check (status in ('pending', 'done', 'skipped')),
+  done_at     timestamptz,
+  workout_id  text,
+  created_at  timestamptz not null default now()
+);
+create index if not exists assigned_client on public.assigned_workouts (client_id, created_at desc);
+alter table public.assigned_workouts enable row level security;
+drop policy if exists "assigned coach" on public.assigned_workouts;
+create policy "assigned coach" on public.assigned_workouts for all to authenticated
+  using (coach_id = auth.uid() and public.coaches(client_id))
+  with check (coach_id = auth.uid() and public.coaches(client_id));
+drop policy if exists "assigned client read" on public.assigned_workouts;
+create policy "assigned client read" on public.assigned_workouts for select to authenticated
+  using (client_id = auth.uid());
+grant select, insert, update, delete on public.assigned_workouts to authenticated;
+revoke all on public.assigned_workouts from anon;
+
+-- the client marks one done (with the logged workout's id) or skips it
+create or replace function public.finish_assigned(p_id uuid, p_status text, p_workout text default null) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if p_status not in ('done', 'skipped', 'pending') then raise exception 'bad status'; end if;
+  update assigned_workouts set status = p_status, done_at = case when p_status = 'pending' then null else now() end,
+    workout_id = case when p_status = 'done' then p_workout else null end
+  where id = p_id and client_id = auth.uid();
+end;
+$$;
+revoke all on function public.finish_assigned(uuid, text, text) from public, anon;
+grant execute on function public.finish_assigned(uuid, text, text) to authenticated;
+
+-- notify the client when a workout arrives, and the coach when it's done
+create or replace function public.on_assigned_notify() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if tg_op = 'INSERT' then
+    perform grit_notify(new.client_id, 'plan', 'Your coach sent you a workout',
+      new.title || case when new.for_date is not null then ' · ' || to_char(new.for_date, 'Dy Mon DD') else '' end,
+      jsonb_build_object('tab', 'train'));
+  elsif new.status = 'done' and old.status is distinct from 'done' then
+    perform grit_notify(new.coach_id, 'plan', display_name(new.client_id) || ' finished a workout', new.title, jsonb_build_object('tab', 'coach'));
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists assigned_notify on public.assigned_workouts;
+create trigger assigned_notify after insert or update of status on public.assigned_workouts for each row execute function public.on_assigned_notify();

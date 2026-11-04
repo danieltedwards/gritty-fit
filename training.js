@@ -58,6 +58,12 @@
   function planNow(id) {
     if (!id) return null;
     if (planCache.has(id)) return planCache.get(id);
+    if (String(id).startsWith('oneoff:')) {
+      // a workout the coach sent: its contents travel with the session, so it survives a reload
+      const as = S().activeSession;
+      if (as && as.oneOff && as.planId === id) { planCache.set(id, as.oneOff.plan); return as.oneOff.plan; }
+      return null;
+    }
     if (failedPlans.has(id)) return null;
     loadPlan(id).then(() => C.render()).catch(() => { failedPlans.add(id); C.render(); });
     return undefined;
@@ -555,6 +561,23 @@
     openSession();
   }
   function openSession() { C.setTab('session'); }
+  // ---------- one-off workouts sent by the coach ----------
+  function startOneOff(a) {
+    const st = S();
+    if (st.activeSession) {
+      if (st.activeSession.oneOff && st.activeSession.oneOff.id === a.id) { openSession(); return; }
+      if (!confirm('You have a workout in progress. Discard it and start this one?')) return;
+    }
+    const day = Object.assign({ label: 'From your coach', name: a.title, blocks: [] }, a.day || {}, { id: 'oneoff' });
+    if (!day.blocks.length) day.freeform = true;
+    const plan = { schema: 1, id: 'oneoff:' + a.id, name: a.title, weeks: 1, oneOff: true, days: [day] };
+    planCache.set(plan.id, plan);
+    st.activeSession = { id: C.uid(), planId: plan.id, dayId: 'oneoff', dayLabel: 'From your coach', dayName: a.title, week: 1, date: C.todayISO(),
+      startedAt: Date.now(), sets: {}, extraSets: {}, primer: {}, extra: [], notes: '', deload: false,
+      oneOff: { id: a.id, title: a.title, note: a.note || '', replaces: a.replaces || null, plan } };
+    C.save();
+    openSession();
+  }
 
   function setRows(ex, as, last) {
     const tgt = targetLoad(ex, planCache.get(as.planId));
@@ -610,7 +633,8 @@
     wk.kb = !!(plan.progression && plan.progression.kettlebell);
     const day = daysAt(plan, as.week || wk.week).find((d) => d.id === as.dayId) || plan.days.find((d) => d.id === as.dayId);
     if (!day) return '<div class="card"><div class="empty">This workout\'s day was removed from the plan.</div><button class="btn danger block" data-action="session-discard">Discard</button></div>';
-    let h = `<div class="card session-head"><div class="sub">${esc(day.label)} · Week ${wk.week}${wk.guide ? ' · ' + esc(wk.guide.label) : ''}</div>
+    let h = `<div class="card session-head"><div class="sub">${as.oneOff ? `From your coach${as.oneOff.replaces ? ' · counts as ' + esc(as.oneOff.replaces.label || 'a plan day') : ''}` : `${esc(day.label)} · Week ${wk.week}${wk.guide ? ' · ' + esc(wk.guide.label) : ''}`}</div>
+      ${as.oneOff && as.oneOff.note ? `<p class="focus">“${esc(as.oneOff.note)}”</p>` : ''}
       <div style="font-weight:800;font-size:22px;line-height:1.15">${esc(day.name)}</div>
       ${day.focus ? `<p class="focus">“${esc(day.focus)}”</p>` : ''}${instructionsHTML(day.instructions)}
       ${wk.guide ? `<p class="sub" style="margin:4px 0 0"><strong>${esc(wk.guide.effort)}</strong>${wk.guide.deload ? ' — deload week' : ''}</p>` : ''}
@@ -686,6 +710,15 @@
     const rec = { id: C.uid(), date: as.date, time: new Date(as.startedAt).toTimeString().slice(0, 5), type: `${as.dayLabel} · ${as.dayName}`, minutes,
       planId: as.planId, dayId: as.dayId, week: as.week, deload: !!as.deload, sets, notes: as.notes.trim(), exercises: '', intensity: null };
     if (scores.length) rec.scores = scores;
+    if (as.oneOff) {
+      // a coach-sent workout: label it, and when it stands in for a plan day count it there
+      rec.type = `From coach · ${as.oneOff.title}`;
+      rec.oneOff = { id: as.oneOff.id, title: as.oneOff.title };
+      const r = as.oneOff.replaces, pr = r && progFor(r.planId), rp = r && planCache.get(r.planId);
+      if (r && r.planId && r.dayId) { rec.planId = r.planId; rec.dayId = r.dayId; rec.week = pr && rp ? programWeek(pr, rp, as.date).week : r.week || null; }
+      else { rec.planId = null; rec.dayId = null; rec.week = null; }
+      if (window.Assign) Assign.complete(as.oneOff.id, rec.id);
+    }
     st.workouts.push(rec);
     st.activeSession = null;
     stopTimer(); runClock();
@@ -936,7 +969,7 @@
     scoreInfo,
     preload() { progs().forEach((p) => loadPlan(p.planId).then(() => C.render()).catch(() => {})); },
     resetPlans() { planIndex = null; indexPromise = null; planCache.clear(); failedPlans.clear(); progs().forEach((p) => loadPlan(p.planId).then(() => C.softRender ? C.softRender() : C.render()).catch(() => {})); },
-    progs, planNow: (id) => planNow(id), loadPlan, plannedOn,
+    progs, planNow: (id) => planNow(id), loadPlan, plannedOn, startOneOff, programWeek, atWeek,
     trainCard, todayCard, summary, isCardio, renderBody,
     cachePlan(id, data) { planCache.set(id, data); },
     daysAt, MAX_KEYS, pctText,

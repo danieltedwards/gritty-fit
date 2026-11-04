@@ -502,3 +502,5 @@ a.btn { text-decoration: none; }
 .day-chip input { position: absolute; opacity: 0; pointer-events: none; }
 .day-chip span { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line); font-size: 13px; font-weight: 700; cursor: pointer; color: var(--muted); }
 .day-chip input:checked + span { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.assign-card { border-color: var(--accent); }
+.assign-item + .assign-item { margin-top: 10px; }

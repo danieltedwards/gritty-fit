@@ -154,6 +154,7 @@
     clearInterval(pullIv);
     pullIv = setInterval(() => { if (document.visibilityState === 'visible') pull(); }, 60000);
     if (window.Chat) Chat.onSignedIn();
+    if (window.Assign) Assign.onSignedIn();
     if (window.Notify) Notify.onSignedIn();
     C.softRender();
   }
@@ -162,6 +163,7 @@
     clearInterval(pullIv);
     if (window.Training) Training.resetPlans();
     if (window.Chat) Chat.onSignedOut();
+    if (window.Assign) Assign.onSignedOut();
     if (window.Notify) Notify.onSignedOut();
     C.softRender();
   }
@@ -630,6 +632,7 @@
           c.shared_photos ? `📷 ${c.shared_photos}` : '', c.unread_notes ? `💬 ${c.unread_notes} unread` : ''].filter(Boolean).map((t) => `<span class="chip">${t}</span>`).join('')}</div>
         <div class="row client-actions"><button class="btn small primary" data-action="coach-view" data-id="${c.client_id}" data-name="${esc(name)}">Open</button>
           <button class="btn small" data-action="chat-with" data-id="${c.client_id}" data-name="${esc(name)}">💬 Chat${window.Chat && Chat.unread(c.client_id) ? ` (${Chat.unread(c.client_id)})` : ''}</button>
+          <button class="btn small" data-action="coach-send-workout" data-id="${c.client_id}" data-name="${esc(name)}">🏋️ Send workout</button>
           <button class="btn small" data-action="coach-note" data-id="${c.client_id}" data-name="${esc(name)}">Note</button>
           <button class="btn small" data-action="coach-targets" data-id="${c.client_id}" data-name="${esc(name)}">Targets</button>
           <button class="btn small" data-action="coach-access" data-id="${c.client_id}" data-name="${esc(name)}">Plans</button>
@@ -701,7 +704,7 @@
     changed, settingsSection, saveName, todayCards, usesCloudPlans, fetchPlans, savePlan, deletePlan,
     canSharePhotos, sharePhoto, unsharePhoto, photoUrl,
     loadRecipes, saveRecipe, saveRecipes, deleteRecipe, recipes: () => recipeCache || [], refreshCoach: () => refreshCoach(),
-    get user() { return user; }, get profile() { return profile; }, get coach() { return coach; }, _sb: () => sb,
+    get user() { return user; }, get profile() { return profile; }, get coach() { return coach; }, _sb: () => sb, coachData: () => coachData,
     get configured() { return !!sb; },
     // exposed for tests
     _toRecords: toRecords, _applyRecord: applyRecord,

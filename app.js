@@ -21,7 +21,7 @@
   const relDay = (iso) => { const diff = daysBetween(iso, todayISO()); return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : prettyDate(iso); };
   const byDateDesc = (a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || ''));
 
-  const APP_VERSION = '2026.11.05-e';
+  const APP_VERSION = '2026.11.05-f';
   // ---------- state ----------
   const DEFAULT_STATE = () => ({
     version: 1,
@@ -278,6 +278,7 @@
     h += `<p class="sub" style="margin:0 0 14px">${greet}${st.name ? ', ' + esc(st.name) : ''}. ${strk ? `<strong>${strk}-day</strong> logging streak — keep it alive.` : 'Log anything today to start a streak.'}</p>`;
 
     h += `<div class="quick-row"><button class="btn primary" data-action="add-food">+ Food</button><button class="btn primary" data-action="add-workout">+ Workout</button><button class="btn primary" data-action="add-body">+ Weight</button></div>`;
+    if (window.Assign) h += Assign.card();
     h += Training.todayCard();
     const hd = S.health && (S.health[t] || S.health[addDays(t, -1)]);
     if (hd) {
@@ -387,7 +388,9 @@
   function trainMark(iso) {
     const done = S.workouts.filter((w) => w.date === iso).length;
     const plan = window.Training && Training.plannedOn ? Training.plannedOn(iso).filter((x) => !(iso === todayISO() && S.workouts.some((w) => w.date === iso && w.planId === x.plan.id))).length : 0;
-    if (!done && !plan) return null;
+    const sent = window.Assign ? Assign.pendingOn(iso).length : 0;
+    if (!done && !plan && !sent) return null;
+    if (sent) return { html: '<i class="dot done"></i>'.repeat(Math.min(done, 2)) + '<i class="dot plan"></i>'.repeat(Math.min(plan + sent, 3 - Math.min(done, 2))), cls: 'dots' };
     return { html: '<i class="dot done"></i>'.repeat(Math.min(done, 3)) + '<i class="dot plan"></i>'.repeat(Math.min(plan, 3 - Math.min(done, 3))), cls: 'dots' };
   }
   function workoutEntry(w) {
@@ -409,7 +412,9 @@
         ${d === t && !S.activeSession ? `<button class="btn small primary" style="flex:none" data-action="session-start" data-day="${x.day.id}" data-plan="${esc(x.plan.id)}">Start</button>` : `<button class="btn small" style="flex:none" data-action="plan-guide" data-id="${esc(x.plan.id)}" data-week="${x.week}">Preview</button>`}</div>
         ${names.length ? `<p class="sub">${esc(names.slice(0, 8).join(' · '))}${names.length > 8 ? ' …' : ''}</p>` : ''}</div>`;
     }).join('');
-    if (!done.length && !planned.length) h += `<div class="empty">${d > t ? 'Nothing planned.' : d === t ? 'Nothing logged yet today.' : 'Rest day. Nothing logged.'}</div>`;
+    const sent = window.Assign ? Assign.pendingOn(d) : [];
+    h += sent.map((a) => Assign.itemHTML(a)).join('');
+    if (!done.length && !planned.length && !sent.length) h += `<div class="empty">${d > t ? 'Nothing planned.' : d === t ? 'Nothing logged yet today.' : 'Rest day. Nothing logged.'}</div>`;
     if (d <= t) h += `<a class="wod-link" href="${cfWodUrl(d)}" target="_blank" rel="noopener"><span><strong>CrossFit.com WOD</strong><span class="sub"> · ${d === t ? 'today' : prettyDate(d, { month: 'short', day: 'numeric' })}</span></span><span aria-hidden="true">↗</span></a>`;
     if (d > t && planned.length) h += '<p class="hint" style="margin-bottom:0">Your plan sets the order of sessions, not the weekdays. Train on whichever days suit you.</p>';
     return h + '</div>';
@@ -468,7 +473,7 @@
     const ws = weekStart(t);
     const thisWeek = workoutsInWeek(ws);
     const mins = thisWeek.reduce((a, w) => a + (w.minutes || 0), 0);
-    let h = Training.trainCard();
+    let h = (window.Assign ? Assign.card() : '') + Training.trainCard();
     h += calendar('train', ui.trainDate, { mark: trainMark }) + trainDayCard(ui.trainDate);
     h += `<div class="grid-2"><div class="card"><div class="card-head"><h2>This week</h2></div><div class="big">${new Set(thisWeek.map((w) => w.date)).size}<small> / ${st.workoutsPerWeek} days</small></div></div>
       <div class="card"><div class="card-head"><h2>Minutes</h2></div><div class="big">${fmt(mins, 0)}<small> min</small></div></div></div>`;
@@ -1475,6 +1480,7 @@
   if (window.Nutrition) Nutrition.init({ getState: () => S, save, render, esc, toast, todayISO, uid, openModal, closeModal: () => modal.close(), field, inNum, ui, actions, modalActions, mealOptions: (iso) => mealOptions(iso) });
   if (window.Recipes) Recipes.init({ esc, field, openModal, closeModal: () => modal.close(), toast, actions, modalActions, ui });
   if (window.Chat) Chat.init({ esc, render, toast, setTab, relDay, ui, views, actions, TITLES, PARENT });
+  if (window.Assign) Assign.init({ esc, render, softRender: () => softRender(), toast, setTab, field, openModal, closeModal: () => modal.close(), todayISO, addDays, daysBetween, prettyDate, relDay, ui, actions, modalActions });
   if (window.Notify) Notify.init({ esc, render, toast, setTab, field, openModal, closeModal: () => modal.close(), ui, views, actions, modalActions, TITLES, PARENT });
   if (window.Editor) Editor.init({ esc, render, toast, setTab, openModal, ui, views, actions, TITLES, PARENT });
 
