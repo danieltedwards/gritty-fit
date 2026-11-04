@@ -504,3 +504,19 @@ a.btn { text-decoration: none; }
 .day-chip input:checked + span { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .assign-card { border-color: var(--accent); }
 .assign-item + .assign-item { margin-top: 10px; }
+
+/* Install banner */
+#install-banner {
+  position: fixed; left: 50%; top: calc(env(safe-area-inset-top) + 10px); z-index: 60;
+  width: min(520px, calc(100% - 20px)); transform: translate(-50%, -140%); transition: transform .3s ease;
+  display: flex; align-items: center; gap: 12px; padding: 12px;
+  background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: 0 10px 30px rgba(0,0,0,.35);
+}
+#install-banner.show { transform: translate(-50%, 0); }
+#install-banner img { border-radius: 10px; flex: none; }
+#install-banner .ib-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 13px; line-height: 1.35; }
+#install-banner .ib-text strong { font-size: 15px; }
+#install-banner .ib-text span { color: var(--muted); }
+#install-banner .ib-btns { display: flex; flex-direction: column; gap: 6px; flex: none; }
+@media (max-width: 380px) { #install-banner { flex-wrap: wrap; } #install-banner .ib-btns { flex-direction: row; width: 100%; justify-content: flex-end; } }
