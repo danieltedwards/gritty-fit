@@ -154,6 +154,7 @@
     clearInterval(pullIv);
     pullIv = setInterval(() => { if (document.visibilityState === 'visible') pull(); }, 60000);
     if (window.Chat) Chat.onSignedIn();
+    if (window.Notify) Notify.onSignedIn();
     C.softRender();
   }
   function onSignedOut() {
@@ -161,6 +162,7 @@
     clearInterval(pullIv);
     if (window.Training) Training.resetPlans();
     if (window.Chat) Chat.onSignedOut();
+    if (window.Notify) Notify.onSignedOut();
     C.softRender();
   }
   let profileError = '';
@@ -303,6 +305,7 @@
         <div class="row"><button class="btn small" data-modal-action="cloud-sync">Sync now</button>
         ${profile && profile.role === 'coach' ? '<button class="btn small primary" data-modal-action="cloud-coach">Coach dashboard</button>' : ''}
         ${profile && profile.role !== 'coach' && !profile.coach_id ? '<button class="btn small" data-modal-action="cloud-invite">Enter invite code</button>' : ''}
+        <button class="btn small" data-modal-action="cloud-notify">🔔 Notifications</button>
         <button class="btn small" data-modal-action="cloud-signout">Sign out</button></div>
         ${profile && profile.role !== 'coach' && !profile.coach_id ? '<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)"><p class="hint" style="margin:0 0 8px">Are you the coach? This works once, for the first account only.</p><button class="btn block" data-modal-action="cloud-claim">🧢 Set up this account as the coach</button></div>' : ''}
       </div>`;
@@ -373,9 +376,11 @@
     'cloud-signout': async () => {
       if (!confirm('Sign out? Your data stays on this device, and syncing stops until you sign in again.')) return;
       await push();
+      if (window.Notify) await Notify.beforeSignOut();
       await sb.auth.signOut();
       C.closeModal(); onSignedOut(); C.toast('Signed out');
     },
+    'cloud-notify': () => { C.closeModal(); setTimeout(() => C.actions['notify-settings'](), 0); },
     'cloud-invite': () => {
       C.closeModal();
       setTimeout(() => C.openModal(`<h2>Join your coach</h2>${field('Invite code', '<input type="text" name="code" autocapitalize="characters" autocomplete="off" placeholder="ABC123" autofocus>')}`,

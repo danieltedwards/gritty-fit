@@ -21,7 +21,7 @@
   const relDay = (iso) => { const diff = daysBetween(iso, todayISO()); return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : prettyDate(iso); };
   const byDateDesc = (a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || ''));
 
-  const APP_VERSION = '2026.11.05-b';
+  const APP_VERSION = '2026.11.05-c';
   // ---------- state ----------
   const DEFAULT_STATE = () => ({
     version: 1,
@@ -1446,6 +1446,7 @@
     document.body.classList.toggle('viewing-as', !!ui.viewAs);
     Training.afterRender(ui.tab);
     if (window.Chat) Chat.afterRender(ui.tab);
+    if (window.Notify) Notify.afterRender(ui.tab);
     if (ui.tab === 'body' && ui.bodySeg === 'photos') renderPhotos();
   }
 
@@ -1471,6 +1472,7 @@
   if (window.Nutrition) Nutrition.init({ getState: () => S, save, render, esc, toast, todayISO, uid, openModal, closeModal: () => modal.close(), field, inNum, ui, actions, modalActions, mealOptions: (iso) => mealOptions(iso) });
   if (window.Recipes) Recipes.init({ esc, field, openModal, closeModal: () => modal.close(), toast, actions, modalActions, ui });
   if (window.Chat) Chat.init({ esc, render, toast, setTab, relDay, ui, views, actions, TITLES, PARENT });
+  if (window.Notify) Notify.init({ esc, render, toast, setTab, field, openModal, closeModal: () => modal.close(), ui, views, actions, modalActions, TITLES, PARENT });
   if (window.Editor) Editor.init({ esc, render, toast, setTab, openModal, ui, views, actions, TITLES, PARENT });
 
   // ---------- app updates ----------
@@ -1503,7 +1505,7 @@
     try { const t = localStorage.getItem('gf-tab'); if (t && views[t]) ui.tab = t; } catch (_) { /* ignore */ }
     if (ui.tab === 'session' && !S.activeSession) ui.tab = 'train';
     if ((ui.tab === 'guide' && !ui.guidePlan) || ui.tab === 'plans') ui.tab = 'train';
-    if (ui.tab === 'coach' || ui.tab === 'editor' || ui.tab === 'chat') ui.tab = 'today';
+    if (ui.tab === 'coach' || ui.tab === 'editor' || ui.tab === 'chat' || ui.tab === 'inbox') ui.tab = 'today';
     Nav.init();
     render();
     Training.preload();

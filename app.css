@@ -485,3 +485,20 @@ a.btn { text-decoration: none; }
 .brand-mark { flex: none; display: block; }
 .brand-mark img { display: block; height: 34px; width: auto; }
 #back-btn:not([hidden]) + .brand-mark { display: none; }
+/* notifications */
+.bell-btn { position: relative; }
+.bell-btn[hidden] { display: none; }
+.bell-badge { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; background: #d64545; color: #fff; font-size: 11px; font-weight: 800; display: grid; place-items: center; border: 2px solid var(--bg); box-sizing: border-box; }
+.bell-badge[hidden] { display: none; }
+.inbox li { gap: 12px; align-items: flex-start; }
+.inbox li.unread .title { font-weight: 800; }
+.inbox-ico { flex: none; font-size: 20px; line-height: 1.4; }
+.inbox-body { white-space: normal; }
+.inbox-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); margin-top: 6px; }
+.nudge { border-color: var(--accent); }
+.rem-row { display: flex; gap: 10px; align-items: center; margin: 10px 0 4px; }
+.rem-row input[type=time] { flex: none; width: 112px; padding: 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; }
+.rem-days { display: flex; gap: 4px; margin: 0 0 8px 28px; }
+.day-chip input { position: absolute; opacity: 0; pointer-events: none; }
+.day-chip span { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line); font-size: 13px; font-weight: 700; cursor: pointer; color: var(--muted); }
+.day-chip input:checked + span { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }

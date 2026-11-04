@@ -431,3 +431,258 @@ revoke all on function public.in_chat(uuid) from public, anon;
 grant execute on function public.mark_chat_read(uuid) to authenticated;
 grant execute on function public.chat_summary() to authenticated;
 grant execute on function public.in_chat(uuid) to authenticated;
+
+-- =====================================================================
+-- Notifications: in-app inbox, phone (web push) delivery and reminders
+-- =====================================================================
+
+-- One row per notification shown in a person's bell. Created only by the triggers and the
+-- reminder job below (never directly by the app).
+create table if not exists public.notifications (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references public.profiles (id) on delete cascade,
+  kind        text not null check (kind in ('chat', 'note', 'plan', 'nutrition', 'recipe', 'reminder')),
+  title       text not null,
+  body        text,
+  link        jsonb,                 -- where tapping it goes, e.g. {"tab":"chat"}
+  grp         text,                  -- groups bursts (e.g. many plans uploaded at once) into one row
+  count       int not null default 1,
+  created_at  timestamptz not null default now(),
+  read_at     timestamptz
+);
+create index if not exists notifications_user on public.notifications (user_id, created_at desc);
+alter table public.notifications enable row level security;
+drop policy if exists "notifications own read" on public.notifications;
+create policy "notifications own read" on public.notifications for select to authenticated using (user_id = auth.uid());
+drop policy if exists "notifications own delete" on public.notifications;
+create policy "notifications own delete" on public.notifications for delete to authenticated using (user_id = auth.uid());
+grant select, delete on public.notifications to authenticated;
+revoke all on public.notifications from anon;
+
+-- Each phone/browser that allowed notifications
+create table if not exists public.push_subscriptions (
+  endpoint    text primary key,
+  user_id     uuid not null default auth.uid() references public.profiles (id) on delete cascade,
+  p256dh      text not null,
+  auth        text not null,
+  ua          text,
+  created_at  timestamptz not null default now()
+);
+alter table public.push_subscriptions enable row level security;
+drop policy if exists "push own" on public.push_subscriptions;
+create policy "push own" on public.push_subscriptions for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+grant select, insert, update, delete on public.push_subscriptions to authenticated;
+revoke all on public.push_subscriptions from anon;
+
+-- Each person's notification settings and reminders
+create table if not exists public.notify_prefs (
+  user_id     uuid primary key default auth.uid() references public.profiles (id) on delete cascade,
+  types       jsonb not null default '{"chat":true,"note":true,"plan":true,"nutrition":true,"recipe":true,"reminder":true}',
+  quiet_start text,                  -- 'HH:MM' local time, no phone alerts from here…
+  quiet_end   text,                  -- …until here (alerts still land in the bell)
+  tz          text not null default 'America/New_York',
+  reminders   jsonb not null default '[]',   -- [{"type":"food","on":true,"time":"20:00","days":[1,2,3,4,5,6,7]}, …]
+  sent        jsonb not null default '{}',   -- {"food":"2026-11-04", …} last local day each reminder went out
+  updated_at  timestamptz not null default now()
+);
+alter table public.notify_prefs enable row level security;
+drop policy if exists "prefs own" on public.notify_prefs;
+create policy "prefs own" on public.notify_prefs for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+grant select, insert, update on public.notify_prefs to authenticated;
+revoke all on public.notify_prefs from anon;
+
+-- mark read
+create or replace function public.mark_notifications_read(p_ids uuid[] default null) returns void
+language sql security definer set search_path = public as $$
+  update notifications set read_at = now()
+  where user_id = auth.uid() and read_at is null and (p_ids is null or id = any(p_ids));
+$$;
+revoke all on function public.mark_notifications_read(uuid[]) from public, anon;
+grant execute on function public.mark_notifications_read(uuid[]) to authenticated;
+
+-- create (or, for a burst with the same group within 6 hours, update) a notification
+create or replace function public.grit_notify(p_user uuid, p_kind text, p_title text, p_body text, p_link jsonb, p_grp text default null, p_many_title text default null)
+returns void language plpgsql security definer set search_path = public as $$
+declare existing notifications%rowtype;
+begin
+  if p_user is null then return; end if;
+  if p_grp is not null then
+    select * into existing from notifications
+      where user_id = p_user and grp = p_grp and read_at is null and created_at > now() - interval '6 hours'
+      order by created_at desc limit 1;
+    if found then
+      update notifications set count = existing.count + 1,
+        title = coalesce(replace(p_many_title, '{n}', (existing.count + 1)::text), p_title), body = p_body
+        where id = existing.id;
+      return;
+    end if;
+  end if;
+  insert into notifications (user_id, kind, title, body, link, grp) values (p_user, p_kind, p_title, p_body, p_link, p_grp);
+end;
+$$;
+revoke all on function public.grit_notify(uuid, text, text, text, jsonb, text, text) from public, anon, authenticated;
+
+-- display name helper
+create or replace function public.display_name(p uuid) returns text
+language sql stable security definer set search_path = public as $$
+  select coalesce(nullif(full_name, ''), split_part(email, '@', 1), 'Someone') from profiles where id = p;
+$$;
+
+-- ---------- triggers: coach and client actions create notifications ----------
+create or replace function public.on_message_notify() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare to_user uuid;
+begin
+  if new.sender_id = new.client_id then select coach_id into to_user from profiles where id = new.client_id;
+  else to_user := new.client_id; end if;
+  perform grit_notify(to_user, 'chat', display_name(new.sender_id), left(new.body, 160),
+    jsonb_build_object('tab', 'chat', 'client', new.client_id), 'chat:' || new.client_id, display_name(new.sender_id) || ' ({n} messages)');
+  return new;
+end;
+$$;
+drop trigger if exists messages_notify on public.messages;
+create trigger messages_notify after insert on public.messages for each row execute function public.on_message_notify();
+
+create or replace function public.on_note_notify() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  perform grit_notify(new.client_id, 'note', 'Note from your coach', left(new.body, 160), jsonb_build_object('tab', 'today'));
+  return new;
+end;
+$$;
+drop trigger if exists coach_notes_notify on public.coach_notes;
+create trigger coach_notes_notify after insert on public.coach_notes for each row execute function public.on_note_notify();
+
+create or replace function public.on_plan_notify() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare c record; nm text := coalesce(new.data->>'name', 'a new plan'); fc uuid;
+begin
+  if not new.published then return new; end if;
+  if tg_op = 'UPDATE' and old.published and old.data->>'forClient' is not distinct from new.data->>'forClient' then return new; end if;
+  begin fc := nullif(new.data->>'forClient', '')::uuid; exception when others then fc := null; end;
+  if fc is not null then
+    perform grit_notify(fc, 'plan', 'Your coach made a plan for you', nm, jsonb_build_object('tab', 'guide', 'id', new.id));
+  elsif new.visibility = 'all' then
+    for c in select id from profiles where coach_id = new.coach_id loop
+      perform grit_notify(c.id, 'plan', 'New plan from your coach', nm, jsonb_build_object('tab', 'plans'), 'library', '{n} new plans from your coach');
+    end loop;
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists plans_notify on public.plans;
+create trigger plans_notify after insert or update of published, data on public.plans for each row execute function public.on_plan_notify();
+
+create or replace function public.on_plan_access_notify() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  perform grit_notify(new.client_id, 'plan', 'Your coach shared a plan with you',
+    (select data->>'name' from plans where id = new.plan_id), jsonb_build_object('tab', 'plans'), 'library', '{n} new plans from your coach');
+  return new;
+end;
+$$;
+drop trigger if exists plan_access_notify on public.plan_access;
+create trigger plan_access_notify after insert on public.plan_access for each row execute function public.on_plan_access_notify();
+
+create or replace function public.on_recipe_notify() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare c record;
+begin
+  if not new.published then return new; end if;
+  if tg_op = 'UPDATE' and old.published then return new; end if;
+  for c in select id from profiles where coach_id = new.coach_id loop
+    perform grit_notify(c.id, 'recipe', 'New recipe from your coach', coalesce(new.data->>'name', 'A new recipe'), jsonb_build_object('tab', 'food'), 'recipes', '{n} new recipes from your coach');
+  end loop;
+  return new;
+end;
+$$;
+drop trigger if exists recipes_notify on public.recipes;
+create trigger recipes_notify after insert or update of published on public.recipes for each row execute function public.on_recipe_notify();
+
+create or replace function public.on_targets_notify() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.targets is distinct from old.targets and new.targets is not null and auth.uid() is distinct from new.id then
+    perform grit_notify(new.id, 'nutrition', 'Your coach updated your targets', 'Calories, macros or training targets changed. Tap to see today''s numbers.', jsonb_build_object('tab', 'food'), 'targets');
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists profiles_targets_notify on public.profiles;
+create trigger profiles_targets_notify after update of targets on public.profiles for each row execute function public.on_targets_notify();
+
+-- ---------- reminders (run every 15 minutes by pg_cron) ----------
+create or replace function public.run_reminders() returns int
+language plpgsql security definer set search_path = public as $$
+declare p record; r jsonb; loc timestamp; d text; mins int; dow int; t int; typ text; n int := 0;
+  title text; body text; link jsonb; done boolean; habits_total int; habits_done int; pname text;
+begin
+  for p in select * from notify_prefs where jsonb_array_length(reminders) > 0 and coalesce((types->>'reminder')::boolean, true) loop
+    begin loc := now() at time zone p.tz; exception when others then loc := now() at time zone 'America/New_York'; end;
+    d := to_char(loc, 'YYYY-MM-DD'); mins := extract(hour from loc)::int * 60 + extract(minute from loc)::int; dow := extract(isodow from loc)::int;
+    for r in select * from jsonb_array_elements(p.reminders) loop
+      typ := r->>'type';
+      continue when not coalesce((r->>'on')::boolean, false) or typ is null or r->>'time' is null;
+      continue when r ? 'days' and jsonb_typeof(r->'days') = 'array' and jsonb_array_length(r->'days') > 0 and not (r->'days' @> to_jsonb(dow));
+      t := split_part(r->>'time', ':', 1)::int * 60 + split_part(r->>'time', ':', 2)::int;
+      continue when mins < t or mins >= t + 30;            -- due in this half hour
+      continue when p.sent->>typ = d;                       -- already sent today
+      done := false; title := null; body := null; link := null;
+      if typ = 'food' then
+        select exists (select 1 from entries where user_id = p.user_id and kind = 'food' and not deleted and data->>'date' = d) into done;
+        title := 'Log today''s food'; body := 'Nothing logged yet today. Two minutes now keeps you on track.'; link := '{"tab":"food"}';
+      elsif typ = 'workout' then
+        select exists (select 1 from entries where user_id = p.user_id and kind = 'workouts' and not deleted and data->>'date' = d) into done;
+        select pl.data->>'name' into pname from entries e join plans pl on pl.id = e.data->'programs'->0->>'planId'
+          where e.user_id = p.user_id and e.kind = 'program' and e.id = 'main' limit 1;
+        title := 'Workout day 💪'; body := case when pname is not null then 'Time to train: ' || pname || '.' else 'Time to get your workout in.' end; link := '{"tab":"train"}';
+      elsif typ = 'weigh' then
+        select exists (select 1 from entries where user_id = p.user_id and kind = 'body' and not deleted and data->>'date' = d) into done;
+        title := 'Weigh-in day'; body := 'Step on the scale and log it. Same time, same conditions.'; link := '{"tab":"body"}';
+      elsif typ = 'habits' then
+        select count(*) into habits_total from entries where user_id = p.user_id and kind = 'habits' and not deleted;
+        select coalesce(jsonb_array_length(data->'ids'), 0) into habits_done from entries where user_id = p.user_id and kind = 'habitday' and id = d and not deleted;
+        habits_done := coalesce(habits_done, 0);
+        done := habits_total > 0 and habits_done >= habits_total;
+        title := 'Daily habits'; body := case when habits_total > 0 then habits_done || ' of ' || habits_total || ' habits done today. Finish strong.' else 'Check off today''s habits.' end; link := '{"tab":"today"}';
+      elsif typ = 'journal' then
+        select exists (select 1 from entries where user_id = p.user_id and kind = 'journal' and not deleted and data->>'date' = d) into done;
+        title := 'Daily check-in'; body := 'How did today go? Two minutes, be honest.'; link := '{"tab":"journal"}';
+      elsif typ = 'water' then
+        title := 'Water check'; body := 'Grab a glass of water.'; link := '{"tab":"today"}';
+      else continue;
+      end if;
+      update notify_prefs set sent = sent || jsonb_build_object(typ, d) where user_id = p.user_id;
+      if not done then
+        insert into notifications (user_id, kind, title, body, link, grp) values (p.user_id, 'reminder', title, body, link, null);
+        n := n + 1;
+      end if;
+    end loop;
+  end loop;
+  return n;
+end;
+$$;
+revoke all on function public.run_reminders() from public, anon, authenticated;
+
+-- schedule it (pg_cron is available on every Supabase plan; skipped quietly where it isn't installed)
+do $$
+begin
+  begin create extension if not exists pg_cron; exception when others then raise notice 'pg_cron not available: %', sqlerrm; end;
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    perform cron.unschedule(jobid) from cron.job where jobname = 'grit-reminders';
+    perform cron.schedule('grit-reminders', '*/15 * * * *', 'select public.run_reminders()');
+  end if;
+end $$;
+
+-- "Send a test" button in notification settings
+create or replace function public.notify_test() returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then raise exception 'Sign in first'; end if;
+  insert into notifications (user_id, kind, title, body, link) values (auth.uid(), 'reminder', 'Test notification 🔔', 'Notifications are working on this device.', '{"tab":"inbox"}');
+end;
+$$;
+revoke all on function public.notify_test() from public, anon;
+grant execute on function public.notify_test() to authenticated;

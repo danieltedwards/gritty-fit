@@ -4,8 +4,8 @@
 //   where GitHub Pages' 10-minute browser cache would otherwise serve old files.
 // - If there's no connection, the last copy saved here is used (works offline / in the gym basement).
 // Bump VERSION whenever app files change.
-const VERSION = 'grit-v31';
-const SHELL = ['./', 'index.html', 'app.css', 'db.js', 'charts.js', 'food-lookup.js', 'health.js', 'nutrition.js', 'training.js', 'cloud.js', 'editor.js', 'chat.js', 'recipes.js', 'app.js', 'config.js', 'vendor/supabase.js', 'plans/index.json', 'plans/pbbsw-phase-1.json', 'manifest.webmanifest', 'favicon.png', 'brand-g-green.png', 'brand-g-tan.png', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
+const VERSION = 'grit-v32';
+const SHELL = ['./', 'index.html', 'app.css', 'db.js', 'charts.js', 'food-lookup.js', 'health.js', 'nutrition.js', 'training.js', 'cloud.js', 'editor.js', 'chat.js', 'notify.js', 'recipes.js', 'app.js', 'config.js', 'vendor/supabase.js', 'plans/index.json', 'plans/pbbsw-phase-1.json', 'manifest.webmanifest', 'favicon.png', 'brand-g-green.png', 'brand-g-tan.png', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION)
@@ -31,4 +31,30 @@ self.addEventListener('fetch', (e) => {
       })
       .catch(() => caches.match(req, { ignoreSearch: true }).then((r) => r || caches.match('./') || caches.match('index.html')))
   );
+});
+
+// ---------- phone notifications ----------
+self.addEventListener('push', (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (_) { d = { title: 'GRIT', body: e.data && e.data.text() }; }
+  e.waitUntil((async () => {
+    await self.registration.showNotification(d.title || 'GRIT', {
+      body: d.body || '', icon: 'icon-192.png', badge: 'favicon.png', tag: d.tag || undefined, renotify: !!d.tag,
+      data: { link: d.link || null, id: d.id || null },
+    });
+    if (self.navigator && self.navigator.setAppBadge && d.badge) self.navigator.setAppBadge(d.badge).catch(() => {});
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    wins.forEach((w) => w.postMessage({ type: 'grit-push' }));
+  })());
+});
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const data = e.notification.data || {};
+  const go = encodeURIComponent(JSON.stringify(Object.assign({}, data.link || {}, { nid: data.id || null })));
+  e.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const w = wins.find((x) => x.url.startsWith(self.registration.scope));
+    if (w) { w.postMessage({ type: 'grit-open', link: data.link || null, id: data.id || null }); return w.focus(); }
+    return self.clients.openWindow(self.registration.scope + '?go=' + go);
+  })());
 });
