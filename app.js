@@ -21,7 +21,7 @@
   const relDay = (iso) => { const diff = daysBetween(iso, todayISO()); return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : prettyDate(iso); };
   const byDateDesc = (a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || ''));
 
-  const APP_VERSION = '2026.11.05-k';
+  const APP_VERSION = '2026.11.05-l';
   // ---------- state ----------
   const DEFAULT_STATE = () => ({
     version: 1,
@@ -57,7 +57,7 @@
   // write immediately, without triggering a cloud push (used when applying synced changes)
   const saveLocal = () => (ui.viewAs ? Promise.resolve() : DB.setState(S));
 
-  const ui = { tab: 'today', foodDate: todayISO(), trainDate: todayISO(), calMode: { food: 'day', train: 'week' }, bodySeg: 'weigh', goalSeg: 'journal', reviewWeek: null, compare: [], photoUrls: new Map() };
+  const ui = { tab: 'today', foodDate: todayISO(), trainDate: todayISO(), coachDate: todayISO(), calMode: { food: 'day', train: 'week', coach: 'week' }, bodySeg: 'weigh', goalSeg: 'journal', reviewWeek: null, compare: [], photoUrls: new Map() };
 
   const wUnit = () => S.settings.units;
   const lUnit = () => (S.settings.units === 'kg' ? 'cm' : 'in');
@@ -378,7 +378,7 @@
       <strong>${label}</strong><button class="btn small" data-action="cal-nav" data-kind="${kind}" data-delta="1" aria-label="Next" ${atMax ? 'disabled' : ''}>›</button></div>
       ${body}${mode !== 'day' ? `<div class="cal-sel">${prettyDate(sel, { weekday: 'long', month: 'short', day: 'numeric' })}${sel !== t ? ' <a href="#" data-action="cal-pick" data-kind="' + kind + '" data-date="' + t + '">Today</a>' : ''}</div>` : ''}</div>`;
   }
-  const calDateKey = { food: 'foodDate', train: 'trainDate' };
+  const calDateKey = { food: 'foodDate', train: 'trainDate', coach: 'coachDate' };
   function calMax(kind) { return kind === 'food' && !(window.Nutrition && Nutrition.active()) ? todayISO() : null; }
   function foodMark(iso) {
     const k = sumKcal(foodOn(iso));
@@ -396,13 +396,15 @@
   function workoutEntry(w) {
     return `<div class="entry"><div class="row" style="justify-content:space-between">
         <div data-action="${w.sets ? 'view-session' : 'edit-workout'}" data-id="${w.id}" style="cursor:pointer;flex:1"><div class="meta">${w.source === 'Apple Health' ? '⌚ ' : ''}${relDay(w.date)}${w.time ? ' ' + w.time : ''}${w.minutes ? ' · ' + w.minutes + ' min' : ''}${w.kcal ? ' · ' + w.kcal + ' kcal' : ''}${w.avgHr ? ' · ' + w.avgHr + ' bpm' : ''}${w.intensity ? ' · RPE ' + w.intensity : ''}</div>
-        <strong>${esc(w.type)}</strong></div>${w.sets || w.cardio ? '' : `<button class="btn small" style="flex:none" data-action="repeat-workout" data-id="${w.id}">Repeat</button>`}<button class="del" data-action="del-workout" data-id="${w.id}" aria-label="Delete">×</button></div>
+        <strong>${esc(w.type)}</strong></div>${w.sets || w.cardio ? '' : `<button class="btn small" style="flex:none" data-action="repeat-workout" data-id="${w.id}">Repeat</button>`}${ui.viewAs ? '' : `<button class="btn small" style="flex:none" data-action="${w.sets ? 'edit-session' : 'edit-workout'}" data-id="${w.id}" aria-label="Edit or move">✎</button><button class="del" data-action="del-workout" data-id="${w.id}" aria-label="Delete">×</button>`}</div>
         ${w.sets ? `<p class="sub">${Training.summary(w)}</p>` : w.exercises ? `<p class="sub">${esc(w.exercises)}</p>` : ''}${w.notes ? `<p>${esc(w.notes)}</p>` : ''}</div>`;
   }
   function trainDayCard(d) {
     const t = todayISO();
     const done = S.workouts.filter((w) => w.date === d);
-    const planned = (window.Training && Training.plannedOn ? Training.plannedOn(d) : []).filter((x) => !(d === t && done.some((w) => w.planId === x.plan.id)));
+    const sentD = window.Assign ? Assign.pendingOn(d) : [];
+    const planned = (window.Training && Training.plannedOn ? Training.plannedOn(d) : []).filter((x) => !(d === t && done.some((w) => w.planId === x.plan.id))
+      && !sentD.some((a) => a.replaces && a.replaces.planId === x.plan.id && a.replaces.dayId === x.day.id)); // coach adjusted this day
     let h = `<div class="card"><div class="card-head"><h2>${d === t ? 'Today' : prettyDate(d, { weekday: 'short', month: 'short', day: 'numeric' })}</h2><button class="btn small" data-action="add-workout" data-date="${d}">+ Log</button></div>`;
     h += done.map(workoutEntry).join('');
     h += planned.map((x) => {
@@ -1349,6 +1351,7 @@
     calc: calcForm,
     'backup-now': () => modalActions.export(),
     'edit-workout': (el) => workoutForm(find('workouts', el.dataset.id)),
+    'edit-session': (el) => Training.editSession(el.dataset.id),
     'del-workout': (el) => { if (confirm('Delete this workout?')) { S.workouts = S.workouts.filter((x) => x.id !== el.dataset.id); save(); render(); } },
     'add-body': () => bodyForm(),
     'edit-body': (el) => bodyForm(find('body', el.dataset.id)),
@@ -1480,6 +1483,7 @@
   if (window.Nutrition) Nutrition.init({ getState: () => S, save, render, esc, toast, todayISO, uid, openModal, closeModal: () => modal.close(), field, inNum, ui, actions, modalActions, mealOptions: (iso) => mealOptions(iso) });
   if (window.Recipes) Recipes.init({ esc, field, openModal, closeModal: () => modal.close(), toast, actions, modalActions, ui });
   if (window.Chat) Chat.init({ esc, render, toast, setTab, relDay, ui, views, actions, TITLES, PARENT });
+  if (window.CoachCal) CoachCal.init({ esc, render, toast, field, openModal, closeModal: () => modal.close(), todayISO, addDays, daysBetween, prettyDate, relDay, calendar, ui, actions, modalActions });
   if (window.Assign) Assign.init({ esc, render, softRender: () => softRender(), toast, setTab, field, openModal, closeModal: () => modal.close(), todayISO, addDays, daysBetween, prettyDate, relDay, ui, actions, modalActions });
   if (window.Import) Import.init({ esc, render, toast, field, openModal, closeModal: () => modal.close(), ui, actions });
   if (window.Notify) Notify.init({ esc, render, toast, setTab, field, openModal, closeModal: () => modal.close(), ui, views, actions, modalActions, TITLES, PARENT });

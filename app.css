@@ -520,3 +520,26 @@ a.btn { text-decoration: none; }
 #install-banner .ib-text span { color: var(--muted); }
 #install-banner .ib-btns { display: flex; flex-direction: column; gap: 6px; flex: none; }
 @media (max-width: 380px) { #install-banner { flex-wrap: wrap; } #install-banner .ib-btns { flex-direction: row; width: 100%; justify-content: flex-end; } }
+
+/* Edit a logged workout */
+.edit-ex { border-top: 1px solid var(--line); padding: 8px 0; }
+.edit-set { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.edit-set > .sub:first-child { width: 44px; flex: none; font-size: 12px; }
+.edit-set input { flex: 1; min-width: 0; }
+
+/* Coach calendar */
+.ccal-client { border-top: 1px solid var(--line); padding: 10px 0 6px; }
+.ccal-client:first-of-type { border-top: 0; }
+.ccal-item { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; }
+.ccal-item .grow { flex: 1; min-width: 0; }
+.ccal-item .meta { font-size: 13px; color: var(--muted); }
+.ccal-tag { flex: none; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; padding: 3px 7px; border-radius: 99px; background: var(--surface-2); color: var(--muted); margin-top: 2px; }
+.ccal-tag.good { background: var(--accent-soft); color: var(--good); }
+.ccal-tag.accent { background: var(--accent); color: var(--on-accent); }
+.ccal-btns { display: flex; gap: 6px; align-items: center; flex: none; }
+.cal-m.good { color: var(--good); font-weight: 800; }
+/* Adjust a client's day */
+.adj-ex { display: grid; grid-template-columns: 1fr auto; gap: 6px; padding: 8px 0; border-top: 1px solid var(--line); }
+.adj-ex .adj-nums { display: flex; align-items: center; gap: 4px; }
+.adj-ex .adj-nums input { width: 64px; }
+.adj-ex .adj-notes { grid-column: 1 / -1; }

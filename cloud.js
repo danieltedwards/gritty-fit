@@ -720,6 +720,7 @@
       if (ov.error) throw ov.error;
       let builtin = [];
       try { builtin = (await (await fetch('plans/index.json')).json()).plans || []; } catch (_) { /* offline */ }
+      if (window.CoachCal) CoachCal.reset();
       coachData = { clients: ov.data || [], invites: (inv.data || []).filter((i) => !i.used_by), plans: pl, builtin, recipes: rc };
     } catch (e) { coachData = { error: e.message }; }
     coachLoading = false;
@@ -734,6 +735,7 @@
     const planName = (id) => { const p = plans.find((x) => x.id === id); return p ? p.data.name + (p.data.forClient ? ' ✨' : '') : null; };
     const today = C.todayISO();
     let h = `<div class="row" style="margin-bottom:14px"><button class="btn primary" data-action="coach-invite">+ Invite client</button><button class="btn" data-action="coach-refresh">↻ Refresh</button></div>`;
+    if (window.CoachCal) h += CoachCal.card();
     h += `<div class="card"><div class="card-head"><h2>Clients · ${clients.length}</h2></div>`;
     h += clients.length ? clients.map((c) => {
       const name = c.full_name || c.email;

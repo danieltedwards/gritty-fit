@@ -83,7 +83,8 @@
   const progFor = (planId) => progs().find((p) => p.planId === planId) || null;
 
   // ---------- helpers ----------
-  const S = () => C.getState();
+  let override = null; // coach calendar: compute a client's plan days against their state
+  const S = () => override || C.getState();
   const esc = (s) => C.esc(s);
   const allExercises = (day) => day.blocks.flatMap((b) => b.exercises);
   function programWeek(prog, plan, date = C.todayISO()) {
@@ -319,6 +320,9 @@
       if (wk.before || wk.done) return '';
       const nd = nextDay(atWeek(plan, wk.week), prog, wk);
       const doneToday = st.workouts.some((w) => w.planId === prog.planId && w.date === C.todayISO() && w.sets);
+      const adj = nd && window.Assign && Assign.pendingOn(C.todayISO()).find((a) => a.replaces && a.replaces.planId === prog.planId && a.replaces.dayId === nd.id);
+      if (adj) return `<div class="row today-plan" style="flex-wrap:nowrap"><div style="flex:1;min-width:0"><div class="sub">${esc(plan.name)} · Week ${wk.week}</div>
+          <strong>${esc(nd.label)}: ${esc(nd.name)}</strong><div class="sub">Your coach adjusted today's session: see <em>From your coach</em> above.</div></div></div>`;
       return `<div class="row today-plan" style="flex-wrap:nowrap"><div style="flex:1;min-width:0"><div class="sub">${esc(plan.name)} · Week ${wk.week}${doneToday ? ' · ✓ trained today' : ''}</div>
           ${nd ? `<strong>${esc(nd.label)}: ${esc(nd.name)}</strong>` : '<span class="sub">All sessions done this week 💪</span>'}</div>
         ${nd ? `<button class="btn ${doneToday ? '' : 'primary'}" data-action="session-start" data-day="${nd.id}" data-plan="${esc(plan.id)}" style="flex:none">Start</button>` : ''}</div>`;
@@ -638,7 +642,8 @@
       <div style="font-weight:800;font-size:22px;line-height:1.15">${esc(day.name)}</div>
       ${day.focus ? `<p class="focus">“${esc(day.focus)}”</p>` : ''}${instructionsHTML(day.instructions)}
       ${wk.guide ? `<p class="sub" style="margin:4px 0 0"><strong>${esc(wk.guide.effort)}</strong>${wk.guide.deload ? ' — deload week' : ''}</p>` : ''}
-      <div class="sub" id="session-clock" style="margin-top:6px"></div></div>`;
+      <div class="row session-date" style="margin-top:6px;gap:8px;flex-wrap:nowrap"><div class="sub" id="session-clock" style="flex:1"></div>
+        <label class="sub" style="display:flex;align-items:center;gap:6px;flex:none">Log for <input type="date" data-session-date value="${esc(as.date)}" max="${C.todayISO()}" style="width:auto;padding:4px 6px;min-height:0"></label></div></div>`;
     const wu = day.warmup && plan.warmups && plan.warmups[day.warmup];
     if (wu) {
       const doneN = wu.items.filter((_, i) => as.primer[i]).length;
@@ -921,10 +926,40 @@
         ${(w.scores || []).length ? `<ul class="list">${w.scores.map((x) => `<li><div class="grow"><div class="title">${esc(x.name)}</div><div class="meta">${esc(SCORE_LABEL[x.type] || '')}</div></div><span class="num">${esc(x.text)}</span></li>`).join('')}</ul>` : ''}
         <ul class="list">${groups.map((g) => `<li><div class="grow"><div class="title">${esc(g.name)}</div><div class="meta">${g.sets.map((s) => (s.weight ? `${s.weight}×${s.reps ?? '–'}` : `${s.reps ?? '–'} reps`)).join(' · ')}</div></div></li>`).join('')}</ul>
         ${w.notes ? `<p>${esc(w.notes)}</p>` : ''}
-        <button class="btn danger small" data-modal-action="del-session" data-id="${w.id}">Delete workout</button>`, null, { hideSave: true });
+        ${C.ui.viewAs ? '' : `<div class="row"><button class="btn small primary" data-modal-action="edit-session" data-id="${w.id}">✎ Edit / move day</button>
+        <button class="btn danger small" data-modal-action="del-session" data-id="${w.id}">Delete workout</button></div>`}`, null, { hideSave: true });
     },
   };
+  // ---------- edit a logged workout: date (move it), time, minutes, every set, scores, notes ----------
+  function editSession(w) {
+    const groups = [];
+    (w.sets || []).forEach((s) => { let g = groups.find((x) => x.exId === s.exId && x.name === s.name); if (!g) groups.push(g = { exId: s.exId, name: s.name, sets: [] }); g.sets.push(s); });
+    const u = unit() || 'lb';
+    const inp = (n, v, ph) => `<input type="number" inputmode="decimal" step="any" min="0" name="${n}" value="${v == null ? '' : esc(v)}" placeholder="${ph}">`;
+    const setRows = (g, gi) => g.sets.concat([{}]).map((x, j) => `<div class="edit-set"><span class="sub">${j < g.sets.length ? 'Set ' + (j + 1) : '+ set'}</span>${inp(`w_${gi}_${j}`, x.weight, u)}<span class="sub">×</span>${inp(`r_${gi}_${j}`, x.reps, 'reps')}</div>`).join('');
+    C.openModal(`<h2>Edit workout</h2><p class="sub" style="margin-top:0">${esc(w.type)}</p>
+      <div class="fields-3">${C.field('Date', `<input type="date" name="date" value="${esc(w.date)}" max="${C.todayISO()}" required>`)}${C.field('Time', `<input type="time" name="time" value="${esc(w.time || '')}">`)}${C.field('Minutes', C.inNum('minutes', w.minutes, 'min="1" max="600"'))}</div>
+      ${(w.scores || []).map((x, i) => C.field(`${esc(x.name)} (${esc(SCORE_LABEL[x.type] || 'score')})`, `<input type="text" name="sc_${i}" value="${esc(x.text)}">`)).join('')}
+      ${groups.map((g, gi) => `<div class="edit-ex"><div class="title" style="font-weight:700">${esc(g.name)}</div>${setRows(g, gi)}</div>`).join('')}
+      <div class="edit-ex"><div class="title" style="font-weight:700">Add an exercise</div>${[0, 1].map((k) => `<div class="edit-set"><input type="text" name="nx_${k}" placeholder="Exercise" style="flex:2">${inp(`nw_${k}`, null, u)}<span class="sub">×</span>${inp(`nr_${k}`, null, 'reps')}</div>`).join('')}</div>
+      <p class="hint">Clear a set's weight and reps to remove it. Change the date to move this workout to another day.</p>
+      ${C.field('Notes', `<textarea name="notes" rows="2">${esc(w.notes || '')}</textarea>`)}`, (fd) => {
+      const n = (k) => { const v = fd.get(k); if (v == null || String(v).trim() === '') return null; const x = Number(v); return Number.isFinite(x) ? x : null; };
+      const sets = [];
+      groups.forEach((g, gi) => { let k = 0; for (let j = 0; j <= g.sets.length; j++) { const wt = n(`w_${gi}_${j}`), r = n(`r_${gi}_${j}`); if (wt == null && r == null) continue; sets.push({ exId: g.exId, name: g.name, set: ++k, weight: wt, reps: r }); } });
+      [0, 1].forEach((k) => { const nm = String(fd.get(`nx_${k}`) || '').trim(); const wt = n(`nw_${k}`), r = n(`nr_${k}`); if (!nm || (wt == null && r == null)) return;
+        const prev = sets.filter((x) => x.name.toLowerCase() === nm.toLowerCase());
+        sets.push({ exId: prev[0] ? prev[0].exId : 'x-' + nm.toLowerCase().replace(/[^a-z0-9]+/g, '-'), name: prev[0] ? prev[0].name : nm, set: prev.length + 1, weight: wt, reps: r }); });
+      const date = fd.get('date') || w.date;
+      const rec = Object.assign({}, w, { date: date > C.todayISO() ? C.todayISO() : date, time: fd.get('time') || w.time || null, minutes: n('minutes') || w.minutes, notes: String(fd.get('notes') || '').trim(), sets });
+      if (w.scores) rec.scores = w.scores.map((x, i) => { const t = String(fd.get(`sc_${i}`) || '').trim(); return t ? Object.assign({}, x, { text: t }) : null; }).filter(Boolean);
+      if (rec.date !== w.date && rec.planId) { const pr = progFor(rec.planId), pl = planCache.get(rec.planId); if (pr && pl) rec.week = programWeek(pr, pl, rec.date).week; }
+      const st = S(); st.workouts = st.workouts.map((x) => (x.id === w.id ? rec : x));
+      C.save(); C.toast(rec.date !== w.date ? `Moved to ${C.prettyDate(rec.date, { weekday: 'short', month: 'short', day: 'numeric' })}` : 'Workout updated');
+    }, { saveLabel: 'Save changes' });
+  }
   const modalActions = {
+    'edit-session': (b) => { const w = S().workouts.find((x) => x.id === b.dataset.id); if (!w) return; C.closeModal(); setTimeout(() => editSession(w), 0); },
     'del-session': (b) => {
       if (!confirm('Delete this workout?')) return;
       const st = S(); st.workouts = st.workouts.filter((x) => x.id !== b.dataset.id); C.save(); C.closeModal(); C.render();
@@ -941,6 +976,7 @@
       setVal(t.dataset.sx, +t.dataset.si, t.dataset.sf, Number.isFinite(v) ? v : null);
       C.save();
     } else if ('sessionNotes' in t.dataset) { as.notes = t.value; C.save(); }
+    else if ('sessionDate' in t.dataset && /^\d{4}-\d\d-\d\d$/.test(t.value)) { as.date = t.value > C.todayISO() ? C.todayISO() : t.value; C.save(); }
   }
 
   // Summary line for history lists
@@ -972,6 +1008,8 @@
     progs, planNow: (id) => planNow(id), loadPlan, plannedOn, startOneOff, programWeek, atWeek,
     trainCard, todayCard, summary, isCardio, renderBody,
     cachePlan(id, data) { planCache.set(id, data); },
+    editSession: (id) => { const w = S().workouts.find((x) => x.id === id); if (w) editSession(w); },
+    withState(st, fn) { const prev = override; override = st; try { return fn(); } finally { override = prev; } },
     daysAt, MAX_KEYS, pctText,
   };
 })();
