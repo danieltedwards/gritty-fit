@@ -21,7 +21,7 @@
   const relDay = (iso) => { const diff = daysBetween(iso, todayISO()); return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : prettyDate(iso); };
   const byDateDesc = (a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || ''));
 
-  const APP_VERSION = '2026.11.05-l';
+  const APP_VERSION = '2026.11.05-m';
   // ---------- state ----------
   const DEFAULT_STATE = () => ({
     version: 1,
@@ -411,8 +411,8 @@
       const names = x.day.blocks.flatMap((b) => b.exercises.map((e) => e.name));
       return `<div class="entry planned"><div class="row" style="flex-wrap:nowrap"><div style="flex:1;min-width:0"><div class="meta">Planned · ${esc(x.plan.name)} · Week ${x.week}${x.guide && x.guide.deload ? ' · deload' : ''}</div>
         <strong>${esc(x.day.label)}: ${esc(x.day.name)}</strong></div>
-        ${d === t && !S.activeSession ? `<button class="btn small primary" style="flex:none" data-action="session-start" data-day="${x.day.id}" data-plan="${esc(x.plan.id)}">Start</button>` : `<button class="btn small" style="flex:none" data-action="plan-guide" data-id="${esc(x.plan.id)}" data-week="${x.week}">Preview</button>`}</div>
-        ${names.length ? `<p class="sub">${esc(names.slice(0, 8).join(' · '))}${names.length > 8 ? ' …' : ''}</p>` : ''}</div>`;
+        ${d === t && !S.activeSession ? `<button class="btn small primary" style="flex:none" data-action="session-start" data-day="${x.day.id}" data-plan="${esc(x.plan.id)}">Start</button>` : `<span class="row" style="flex:none;gap:6px;flex-wrap:nowrap"><button class="btn small" data-action="plan-guide" data-id="${esc(x.plan.id)}" data-week="${x.week}">Preview</button>${!S.activeSession && x.week === (Training.programWeek && x.prog ? Training.programWeek(x.prog, x.plan).week : x.week) ? `<button class="btn small primary" data-action="session-start" data-day="${x.day.id}" data-plan="${esc(x.plan.id)}">Do today</button>` : ''}</span>`}</div>
+        ${names.length ? `<p class="sub">${esc(names.slice(0, 8).join(' · '))}${names.length > 8 ? ' …' : ''}</p>` : ''}${d === t && window.Training && Training.otherDays ? Training.otherDays(x.plan.id, x.day.id) : ''}</div>`;
     }).join('');
     const sent = window.Assign ? Assign.pendingOn(d) : [];
     h += sent.map((a) => Assign.itemHTML(a)).join('');

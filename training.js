@@ -281,7 +281,8 @@
       <div class="week-pill">Week ${wk.week} of ${plan.weeks}${wk.blocks > 1 ? ` · Block ${wk.block}` : ''}${wk.guide ? ` · ${esc(wk.guide.label)}` : ''}</div>
       ${wk.guide ? `<p class="sub" style="margin:6px 0 0"><strong>${esc(wk.guide.effort)}</strong>. ${esc(wk.guide.note || '')}</p>` : ''}`}
       <div class="days">${pw.days.map((d) => `<button class="day ${doneIds.has(d.id) ? 'done' : ''} ${nd && nd.id === d.id ? 'next' : ''}" data-action="session-start" data-day="${d.id}" ${P}>
-        <span class="day-label">${esc(d.label)}${d.optional ? ' · optional' : ''}</span><span class="day-name">${esc(d.name)}</span><span class="day-state">${doneIds.has(d.id) ? '✓ Done' : nd && nd.id === d.id ? 'Up next' : ''}</span></button>`).join('')}</div>
+        <span class="day-label">${esc(d.label)}${d.optional ? ' · optional' : ''}</span><span class="day-name">${esc(d.name)}</span><span class="day-state">${doneIds.has(d.id) ? '✓ Done' : nd && nd.id === d.id ? 'Up next · tap to start' : 'Tap to start'}</span></button>`).join('')}</div>
+      ${!wk.done && !wk.before ? '<p class="hint" style="margin:6px 0 0">Do this week\'s days in any order. Tap the one you want to do today.</p>' : ''}
       ${maxesRow(plan)}
       ${!as && nd && !wk.done ? `<button class="btn primary block" data-action="session-start" data-day="${nd.id}" ${P} style="margin-top:10px">Start ${esc(nd.label)}: ${esc(nd.name)}</button>` : ''}
       ${!nd && !wk.done && !wk.before ? '<p class="sub">All sessions done this week. Recover well 💪</p>' : ''}
@@ -310,6 +311,15 @@
   }
 
   // Today screen card
+  // the other sessions still open this program week, as quick "start this one instead" chips
+  function otherDays(planId, exceptId) {
+    const prog = progFor(planId), plan = prog && planNow(planId); if (!plan) return '';
+    const wk = programWeek(prog, plan); if (wk.before || wk.done) return '';
+    const done = new Set(sessionsThisProgramWeek(prog, wk).map((w) => w.dayId));
+    const left = atWeek(plan, wk.week).days.filter((d) => d.id !== exceptId && !done.has(d.id));
+    if (!left.length || S().activeSession) return '';
+    return `<div class="day-pick"><span class="sub">Or do a different day:</span>${left.map((d) => `<button class="chip-btn" data-action="session-start" data-day="${d.id}" data-plan="${esc(plan.id)}">${esc(d.label)}<span>${esc(d.name)}</span></button>`).join('')}</div>`;
+  }
   function todayCard() {
     const st = S();
     if (st.activeSession) return `<div class="card" style="border-color:var(--accent)"><div class="row" style="flex-wrap:nowrap"><div style="flex:1"><strong>🏋️ Workout in progress</strong><div class="sub">${esc(st.activeSession.dayName)}</div></div><button class="btn primary" data-action="session-open">Resume</button></div></div>`;
@@ -325,7 +335,7 @@
           <strong>${esc(nd.label)}: ${esc(nd.name)}</strong><div class="sub">Your coach adjusted today's session: see <em>From your coach</em> above.</div></div></div>`;
       return `<div class="row today-plan" style="flex-wrap:nowrap"><div style="flex:1;min-width:0"><div class="sub">${esc(plan.name)} · Week ${wk.week}${doneToday ? ' · ✓ trained today' : ''}</div>
           ${nd ? `<strong>${esc(nd.label)}: ${esc(nd.name)}</strong>` : '<span class="sub">All sessions done this week 💪</span>'}</div>
-        ${nd ? `<button class="btn ${doneToday ? '' : 'primary'}" data-action="session-start" data-day="${nd.id}" data-plan="${esc(plan.id)}" style="flex:none">Start</button>` : ''}</div>`;
+        ${nd ? `<button class="btn ${doneToday ? '' : 'primary'}" data-action="session-start" data-day="${nd.id}" data-plan="${esc(plan.id)}" style="flex:none">Start</button>` : ''}</div>${nd ? otherDays(plan.id, nd.id) : ''}`;
     }).filter(Boolean);
     if (!rows.length) return '';
     return `<div class="card"><div class="card-head"><h2>Training</h2></div>${rows.join('')}</div>`;
@@ -1005,7 +1015,7 @@
     scoreInfo,
     preload() { progs().forEach((p) => loadPlan(p.planId).then(() => C.render()).catch(() => {})); },
     resetPlans() { planIndex = null; indexPromise = null; planCache.clear(); failedPlans.clear(); progs().forEach((p) => loadPlan(p.planId).then(() => C.softRender ? C.softRender() : C.render()).catch(() => {})); },
-    progs, planNow: (id) => planNow(id), loadPlan, plannedOn, startOneOff, programWeek, atWeek,
+    otherDays, progs, planNow: (id) => planNow(id), loadPlan, plannedOn, startOneOff, programWeek, atWeek,
     trainCard, todayCard, summary, isCardio, renderBody,
     cachePlan(id, data) { planCache.set(id, data); },
     editSession: (id) => { const w = S().workouts.find((x) => x.id === id); if (w) editSession(w); },
