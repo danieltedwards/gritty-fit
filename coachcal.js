@@ -15,19 +15,23 @@
     st.loading = true; st.err = null;
     try {
       const ids = data.clients.map((c) => c.client_id);
-      const by = new Map(data.clients.map((c) => [c.client_id, { c, state: { workouts: [], programs: [], program: null, settings: { units: 'lb' } } }]));
+      const by = new Map(data.clients.map((c) => [c.client_id, { c, state: { workouts: [], programs: [], program: null, settings: { units: 'lb' } }, body: [], nutrition: null, targets: null }]));
       if (ids.length) {
         for (let from = 0; ; from += 1000) {
-          const { data: rows, error } = await sb().from('entries').select('user_id,kind,id,data').in('user_id', ids).in('kind', ['workouts', 'program', 'settings']).eq('deleted', false).range(from, from + 999);
+          const { data: rows, error } = await sb().from('entries').select('user_id,kind,id,data').in('user_id', ids).in('kind', ['workouts', 'program', 'settings', 'body', 'nutrition']).eq('deleted', false).range(from, from + 999);
           if (error) throw error;
           rows.forEach((r) => {
             const x = by.get(r.user_id); if (!x || !r.data) return;
             if (r.kind === 'workouts') x.state.workouts.push(r.data);
             else if (r.kind === 'program') { x.state.programs = Array.isArray(r.data.programs) ? r.data.programs.slice(0, 3) : (r.data.program ? [r.data.program] : []); x.state.program = x.state.programs[0] || null; }
             else if (r.kind === 'settings' && r.data.units) x.state.settings.units = r.data.units;
+            else if (r.kind === 'body') x.body.push(r.data);
+            else if (r.kind === 'nutrition') x.nutrition = r.data;
           });
           if (rows.length < 1000) break;
         }
+        const { data: tg } = await sb().from('profiles').select('id,targets').in('id', ids);
+        (tg || []).forEach((r) => { const x = by.get(r.id); if (x) x.targets = r.targets || null; });
         const since = new Date(Date.now() - 60 * 864e5).toISOString();
         const { data: sent } = await sb().from('assigned_workouts').select('id,client_id,title,day,note,for_date,replaces,status,done_at,created_at').in('client_id', ids).gte('created_at', since).order('created_at', { ascending: true });
         st.sent = (sent || []).map((a) => Object.assign(a, { for_date: a.for_date ? String(a.for_date).slice(0, 10) : null }));
@@ -64,11 +68,51 @@
     return { html: ok ? `${ok}✓` : `${n}`, cls: ok ? 'good' : '' };
   }
 
+  // ---------- nutrition check-ins (every 2 weeks, coach approves) ----------
+  function checkinFor(x) {
+    const n = x.nutrition; if (!n || !n.profile || !window.Nutrition || !Nutrition.checkin) return null;
+    const t = C.todayISO(), rev = ((C.getState().settings || {}).nutReviewed || {})[x.c.client_id];
+    const tc = x.targets && x.targets.checkin;
+    const since = [n.profile.updated, rev, tc].filter(Boolean).sort().pop();
+    return Nutrition.checkin({ profile: n.profile, coach: { kcalAdjust: x.targets && x.targets.kcalAdjust != null ? x.targets.kcalAdjust : (n.coach || {}).kcalAdjust },
+      body: x.body, units: x.state.settings.units, since, today: t, foodDays: x.c.food_days_7d });
+  }
+  function checkinsCard() {
+    if (!st.clients) return '';
+    const rows = st.clients.map((x) => ({ x, ci: checkinFor(x) })).filter((r) => r.ci);
+    if (!rows.length) return '';
+    const due = rows.filter((r) => r.ci.due), later = rows.filter((r) => !r.ci.due);
+    const cls = { ok: 'good', slow: 'accent', fast: 'accent', nodata: '' }, tag = { ok: 'On track', slow: 'Adjust', fast: 'Adjust', nodata: 'No data' };
+    let h = `<div class="card"><div class="card-head"><h2>Nutrition check-ins${due.length ? ' · ' + due.length + ' due' : ''}</h2></div>`;
+    h += due.length ? due.map(({ x, ci }) => {
+      const name = x.c.full_name || x.c.email, id = x.c.client_id;
+      const btns = ci.status === 'nodata' ? `<button class="btn small" data-action="chat-with" data-id="${id}" data-name="${esc(name)}">💬 Ask them</button><button class="btn small" data-action="ci-skip" data-id="${id}">Skip</button>`
+        : ci.status === 'ok' ? `<button class="btn small primary" data-action="ci-skip" data-id="${id}">✓ Keep as is</button><button class="btn small" data-action="ci-edit" data-id="${id}">Change…</button>`
+        : `<button class="btn small primary" data-action="ci-approve" data-id="${id}">Approve ${ci.change > 0 ? '+' : '−'}${Math.abs(ci.change)} kcal</button><button class="btn small" data-action="ci-edit" data-id="${id}">Edit</button><button class="btn small" data-action="ci-skip" data-id="${id}">Keep as is</button>`;
+      return `<div class="ccal-client"><div class="ccal-item"><span class="ccal-tag ${cls[ci.status]}">${tag[ci.status]}</span><div class="grow"><strong>${esc(name)}</strong>
+        <div class="meta">${esc(ci.text)}</div>
+        ${ci.lowLog && ci.status !== 'ok' && ci.status !== 'nodata' ? `<div class="meta"><strong>Food logged ${ci.foodDays}/7 days.</strong> A stall can be tracking, not the plan. Worth a chat first.</div>` : ''}
+        ${ci.kcalAdjust ? `<div class="meta">Current adjustment: ${ci.kcalAdjust > 0 ? '+' : ''}${ci.kcalAdjust} kcal/day</div>` : ''}</div></div>
+        <div class="row" style="gap:6px;margin-top:4px">${btns}</div></div>`;
+    }).join('') : '<div class="meta">Nobody is due. Each client gets one every 2 weeks.</div>';
+    if (later.length) h += `<p class="hint" style="margin:8px 0 0">Next: ${later.sort((a, b) => a.ci.nextOn.localeCompare(b.ci.nextOn)).map(({ x, ci }) => `${esc((x.c.full_name || x.c.email).split(/[ @]/)[0])} ${esc(C.prettyDate(ci.nextOn, { month: 'short', day: 'numeric' }))}`).join(' · ')}</p>`;
+    return h + '</div>';
+  }
+  async function applyAdjust(id, newAdjust) {
+    const x = st.clients.find((y) => y.c.client_id === id); if (!x) return false;
+    const t = Object.assign({}, x.targets || {}, { kcalAdjust: Math.round(newAdjust), v: Date.now(), checkin: C.todayISO() });
+    const { error } = await sb().from('profiles').update({ targets: t }).eq('id', id);
+    if (error) { C.toast('Couldn\'t save: ' + error.message); return false; }
+    x.targets = t; markReviewed(id);
+    C.toast(`Saved. ${x.c.full_name || 'Their'} targets update on their next sync`); C.render(); return true;
+  }
+  function markReviewed(id) { const s2 = C.getState().settings; s2.nutReviewed = Object.assign({}, s2.nutReviewed, { [id]: C.todayISO() }); C.save(); }
+
   function card() {
     const data = cd(); if (!data || !data.clients || !data.clients.length) return '';
     if (!st.clients && !st.loading && !st.err) load();
     const d = C.ui.coachDate, t = C.todayISO();
-    let h = `<div class="coach-cal">${C.calendar('coach', d, { mark })}<div class="card"><div class="card-head"><h2>${d === t ? 'Today' : esc(C.prettyDate(d, { weekday: 'long', month: 'short', day: 'numeric' }))}</h2><button class="btn small" data-action="ccal-reload">↻</button></div>`;
+    let h = `${checkinsCard()}<div class="coach-cal">${C.calendar('coach', d, { mark })}<div class="card"><div class="card-head"><h2>${d === t ? 'Today' : esc(C.prettyDate(d, { weekday: 'long', month: 'short', day: 'numeric' }))}</h2><button class="btn small" data-action="ccal-reload">↻</button></div>`;
     if (st.err) return h + `<p class="bad">${esc(st.err)}</p></div></div>`;
     if (!st.clients) return h + '<div class="empty">Loading your clients\' training…</div></div></div>';
     h += st.clients.map((x) => {
@@ -83,6 +127,8 @@
       rows += r.planned.map((p, i) => `<div class="ccal-item"><span class="ccal-tag">Plan</span><div class="grow"><strong>${esc(p.day.label)}: ${esc(p.day.name)}</strong>
         <div class="meta">${esc(p.plan.name)} · Week ${p.week}${p.guide && p.guide.deload ? ' · deload' : ''}</div></div>
         <div class="ccal-btns"><button class="btn small primary" data-action="ccal-adjust" data-client="${x.c.client_id}" data-i="${i}">Adjust</button></div></div>`).join('');
+      const ci = d === t ? checkinFor(x) : null;
+      if (ci && ci.due) rows += `<div class="ccal-item"><span class="ccal-tag accent">Check-in</span><div class="grow"><strong>Nutrition check-in due</strong><div class="meta">${esc(ci.text)}</div></div></div>`;
       if (!rows) rows = `<div class="meta" style="padding:4px 0">${d < t ? 'Nothing logged' : x.state.programs.length ? 'Rest day' : 'No plan'}</div>`;
       return `<div class="ccal-client"><div class="row" style="justify-content:space-between;flex-wrap:nowrap"><strong>${esc(name)}</strong>
         <button class="link-btn" data-action="coach-send-workout" data-id="${x.c.client_id}" data-name="${esc(name)}" style="font-size:13px">+ Send workout</button></div>${rows}</div>`;
@@ -144,6 +190,17 @@
 
   const nameOf = (id) => { const x = st.clients && st.clients.find((y) => y.c.client_id === id); return x ? x.c.full_name || x.c.email : 'client'; };
   const actions = {
+    'ci-approve': (el) => { const x = st.clients.find((y) => y.c.client_id === el.dataset.id); const ci = x && checkinFor(x); if (ci) applyAdjust(el.dataset.id, ci.newAdjust); },
+    'ci-skip': (el) => { markReviewed(el.dataset.id); C.toast('Marked reviewed. Next check-in in 2 weeks'); C.render(); },
+    'ci-edit': (el) => {
+      const x = st.clients.find((y) => y.c.client_id === el.dataset.id); const ci = x && checkinFor(x); if (!ci) return;
+      C.openModal(`<h2>Adjust ${esc(x.c.full_name || x.c.email)}'s calories</h2><p class="sub" style="margin-top:0">${esc(ci.text || '')}</p>
+        ${C.field('Change per day (kcal)', `<input type="number" name="chg" step="25" value="${ci.change || 0}">`, `Current adjustment ${ci.kcalAdjust > 0 ? '+' : ''}${ci.kcalAdjust} kcal. Negative takes calories off (mostly carbs); positive adds.`)}`, (fd) => {
+        const chg = Number(fd.get('chg')) || 0;
+        if (!chg) { markReviewed(x.c.client_id); C.toast('No change. Marked reviewed'); C.render(); return; }
+        applyAdjust(x.c.client_id, ci.kcalAdjust + chg);
+      }, { saveLabel: 'Save' });
+    },
     'ccal-reload': () => { st.clients = null; st.err = null; load(); C.render(); },
     'ccal-adjust': (el) => {
       const x = st.clients.find((y) => y.c.client_id === el.dataset.client); if (!x) return;

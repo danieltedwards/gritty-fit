@@ -54,11 +54,25 @@
   const VEG = 'Spinach, carrots, peppers, broccoli, greens';
 
   // ---------- core math ----------
-  const lbOf = (st, p) => {
-    const w = st.body.filter((b) => b.weight != null).sort((a, b) => a.date.localeCompare(b.date)).pop();
-    if (w) return st.settings.units === 'kg' ? w.weight / 0.45359237 : w.weight;
-    return p.weightLb;
-  };
+  // Bodyweight for the math: the average of the weigh-ins in the 7 days up to the latest one, so a single
+  // salty-dinner spike doesn't move the targets (RP works off weekly averages).
+  const toLb = (st, w) => (st.settings.units === 'kg' ? w / 0.45359237 : w);
+  const addDaysISO = (iso, n) => { const [y, m, d] = iso.split('-').map(Number); const x = new Date(y, m - 1, d + n); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); };
+  function weightInfo(body, units) {
+    const ws = (body || []).filter((b) => b.weight != null && b.date).sort((a, b) => a.date.localeCompare(b.date));
+    if (!ws.length) return null;
+    const last = ws[ws.length - 1], from = addDaysISO(last.date, -6);
+    const wk = ws.filter((b) => b.date >= from);
+    const avg = wk.reduce((a, b) => a + Number(b.weight), 0) / wk.length;
+    const lb = units === 'kg' ? avg / 0.45359237 : avg;
+    return { lb, n: wk.length, last: last.date };
+  }
+  const lbOf = (st, p) => { const w = weightInfo(st.body, st.settings.units); return w ? w.lb : p.weightLb; };
+  // body fat: the latest one logged with a weigh-in, else the one from setup
+  function bfOf(st, p) {
+    const b = (st.body || []).filter((x) => Number(x.bodyFat) > 2 && Number(x.bodyFat) < 70).sort((a, c) => a.date.localeCompare(c.date)).pop();
+    return b ? Number(b.bodyFat) : (p.bodyFat || null);
+  }
   function bmrOf(p, bw) {
     const kg = bw * 0.45359237, cm = (p.heightIn || 66) * 2.54;
     const mifflin = 10 * kg + 6.25 * cm - 5 * (p.age || 30) + (p.sex === 'm' ? 5 : -161);
@@ -73,10 +87,14 @@
     const delta = (p.goal === 'cut' ? -1 : 1) * rate / 100 * bw * 500; // %BW/week → kcal/day
     const floor = Math.max(p.sex === 'm' ? 1500 : 1200, bmr * 0.9);
     const kcalFor = (t) => { let k = maintFor(t) + delta + (Number(coach.kcalAdjust) || 0); if (p.goal === 'cut') k = Math.max(k, floor); return k; };
-    // protein: by bodyweight; trimmed for higher body fat (RP)
-    let perLb = p.goal === 'cut' ? 1.0 : 0.9;
-    if (p.bodyFat && p.bodyFat > (p.sex === 'm' ? 25 : 32)) perLb *= 0.8;
-    const P = coach.protein ? Number(coach.protein) : r5(perLb * bw);
+    // protein (RP): ~1 g per lb bodyweight for lean people; with a body-fat % it's set from lean mass, so
+    // someone carrying more fat isn't told to eat for weight that isn't muscle. A bit higher on a cut.
+    let autoP;
+    if (p.bodyFat) {
+      const lean = bw * (1 - p.bodyFat / 100);
+      autoP = Math.min(lean * (p.goal === 'cut' ? 1.25 : 1.1), bw * (p.goal === 'cut' ? 1.1 : 1.0));
+    } else autoP = bw * (p.goal === 'cut' ? 1.0 : 0.9);
+    const P = coach.protein ? Number(coach.protein) : r5(autoP);
     // fat: same every day (min 0.3 g/lb, ~25% of rest-day calories); carbs absorb the training difference
     const fatPct = p.goal === 'cut' ? 0.25 : p.goal === 'build' ? 0.30 : 0.27;
     let F = r5(Math.max(0.3 * bw, fatPct * kcalFor('rest') / 9));
@@ -157,10 +175,10 @@
     const wd = new Date(y, mo - 1, d).getDay();
     const type = ov.type || (p.schedule && p.schedule[wd]) || 'rest';
     const after = ov.after ?? p.trainAfter ?? 2;
-    const bw = lbOf(st, p);
-    const t = macros(p, type, bw, n.coach || {});
+    const bw = lbOf(st, p), bf = bfOf(st, p);
+    const t = macros(Object.assign({}, p, { bodyFat: bf }), type, bw, n.coach || {});
     const meals = distribute(layout(p, type, after), t, type);
-    return { p, type, after, bw, targets: t, meals, override: !!(ov.type || ov.after != null) };
+    return { p, type, after, bw, bf, targets: t, meals, override: !!(ov.type || ov.after != null) };
   }
   function targetsFor(iso) { const d = dayInfo(iso); return d ? d.targets : null; }
   const active = () => !!(S().nutrition && S().nutrition.profile);
@@ -181,7 +199,7 @@
       <div class="fields-2">${C.field('Sex', sel('sex', p.sex || st.settings.sex || 'f', [['f', 'Female'], ['m', 'Male']]))}${C.field('Age', C.inNum('age', p.age || st.settings.age, 'min="14" max="90" required'))}</div>
       ${kg ? C.field('Height (cm)', C.inNum('hcm', hIn ? Math.round(hIn * 2.54) : '', 'min="120" max="230" required'))
         : `<div class="fields-2">${C.field('Height (ft)', C.inNum('hft', hIn ? Math.floor(hIn / 12) : '', 'min="4" max="7" required'))}${C.field('(in)', C.inNum('hin', hIn ? Math.round(hIn % 12) : '', 'min="0" max="11"'))}</div>`}
-      <div class="fields-2">${C.field(`Weight (${kg ? 'kg' : 'lb'})`, C.inNum('weight', bwShow, 'min="60" required'))}${C.field('Body fat % (optional)', C.inNum('bf', p.bodyFat, 'min="3" max="60"'))}</div>
+      <div class="fields-2">${C.field(`Weight (${kg ? 'kg' : 'lb'})`, C.inNum('weight', bwShow, 'min="60" required'))}${C.field('Body fat % (optional)', C.inNum('bf', bfOf(st, p) || '', 'min="3" max="60"'))}</div>
       ${C.field('Your day outside training', sel('job', p.job || 'desk', Object.entries(JOB).map(([k, v]) => [k, v[1]])))}
       <div class="fields-2">${C.field('Goal', sel('goal', p.goal || 'maintain', Object.entries(GOALS)))}${C.field('Pace', sel('pace', p.pace || 'standard', [['gentle', 'Gentle'], ['standard', 'Standard'], ['aggressive', 'Aggressive']]))}</div>
       <div class="sub" style="font-weight:700;margin:10px 0 6px">Your training week</div>
@@ -200,8 +218,12 @@
       if (!prof) { C.toast('Fill in age, height and weight'); return false; }
       st.nutrition = Object.assign({ overrides: {}, coach: {} }, st.nutrition || {}, { profile: prof });
       st.settings.sex = prof.sex; st.settings.age = prof.age; st.settings.heightCm = Math.round(prof.heightIn * 2.54 * 10) / 10;
-      if (!st.body.some((b) => b.weight != null)) {
-        st.body.push({ id: C.uid(), date: C.todayISO(), weight: Math.round((kg ? prof.weightLb * 0.45359237 : prof.weightLb) * 10) / 10, notes: 'From nutrition setup' });
+      const typed = Math.round((kg ? prof.weightLb * 0.45359237 : prof.weightLb) * 10) / 10, cur = lbOf(st, prof);
+      const bfChanged = prof.bodyFat && prof.bodyFat !== bfOf(st, Object.assign({}, prof, { bodyFat: null }));
+      if (!st.body.some((b) => b.weight != null) || Math.abs(cur - prof.weightLb) >= 0.5 || bfChanged) {
+        const ex = st.body.find((b) => b.date === C.todayISO());
+        if (ex) { ex.weight = typed; if (prof.bodyFat) ex.bodyFat = prof.bodyFat; }
+        else st.body.push({ id: C.uid(), date: C.todayISO(), weight: typed, bodyFat: prof.bodyFat || undefined, notes: 'From nutrition setup' });
       }
       C.save();
       C.toast(prof.flagged ? 'Saved. Your coach will review your targets before you cut calories' : 'Your nutrition plan is ready 🍽');
@@ -253,7 +275,9 @@
       ${d.override ? `<button class="link-btn" data-action="nut-reset-day" style="font-size:13px">Reset to my usual ${DAYS[new Date(...dateIso.split('-').map((x, i) => (i === 1 ? x - 1 : +x))).getDay()]}</button>` : ''}
       <div style="margin-top:12px">${bar('Calories', got.kcal, t.kcal, '')}${bar('Protein', got.p, t.protein, ' g')}${bar('Carbs', got.c, t.carbs, ' g')}${bar('Fat', got.f, t.fat, ' g')}</div>
       <button class="btn small block" data-action="nut-browse" style="margin-top:10px">📖 Browse recipes & saved meals</button>
-      <p class="hint" style="margin:8px 0 0">${GOALS[p.goal]}${p.goal !== 'maintain' ? ' · ' + p.pace : ''}${st.nutrition.coach && (st.nutrition.coach.kcalAdjust || st.nutrition.coach.protein) ? ' · adjusted by your coach' : ''}${p.flagged ? ' · <strong>coach review</strong>' : ''}</p></div>`;
+      <p class="hint" style="margin:8px 0 0">${GOALS[p.goal]}${p.goal !== 'maintain' ? ' · ' + p.pace : ''}${st.nutrition.coach && (st.nutrition.coach.kcalAdjust || st.nutrition.coach.protein) ? ' · adjusted by your coach' : ''}${p.flagged ? ' · <strong>coach review</strong>' : ''}</p>
+      <p class="hint" style="margin:2px 0 0">Based on ${(() => { const w = weightInfo(st.body, st.settings.units); const kg = st.settings.units === 'kg'; const v = (lb) => (kg ? (lb * 0.45359237).toFixed(1) + ' kg' : lb.toFixed(1) + ' lb');
+        return w ? `${w.n > 1 ? `your 7-day average weight, ${v(w.lb)}` : `your last weigh-in, ${v(w.lb)}`}` : `${v(d.bw)}`; })()}${d.bf ? ` · ${d.bf}% body fat` : ''}. Updates as you log weigh-ins.</p></div>`;
     const picksFor = (m, i) => {
       const prefs = p.prefs || DEFAULT_PREFS;
       const rot = (arr, off) => arr[(i + off + ((C.ui.nutSwap || {})[m.key] || 0)) % arr.length];
@@ -456,6 +480,41 @@
   // Meal options for the food form when a plan is active
   function slotsFor(iso) { const d = dayInfo(iso); return d ? d.meals.map((m) => m.label) : null; }
 
+  // ---------- 2-week check-in (RP): is the weight moving at the goal's rate? ----------
+  // Compares the actual trend over the last ~2 weeks (least-squares slope of the weigh-ins) with the goal rate
+  // and suggests a calorie change (mostly from carbs). The coach approves it before anything changes.
+  function checkin({ profile: p, coach = {}, body = [], units = 'lb', since, today, foodDays }) {
+    if (!p || !p.goal) return null;
+    const lbs = (w) => (units === 'kg' ? w / 0.45359237 : w);
+    const from = addDaysISO(today, -20);
+    const pts = body.filter((b) => b.weight != null && b.date >= from && b.date <= today).map((b) => ({ x: (Date.parse(b.date) - Date.parse(today)) / 864e5, y: lbs(Number(b.weight)) }));
+    const start = since || p.updated || today;
+    const daysIn = Math.round((Date.parse(today) - Date.parse(start)) / 864e5);
+    const due = daysIn >= 14;
+    const span = pts.length ? Math.max(...pts.map((q) => q.x)) - Math.min(...pts.map((q) => q.x)) : 0;
+    const base = { due, daysIn, since: start, nextOn: addDaysISO(start, 14), weighIns: pts.length, kcalAdjust: Number(coach.kcalAdjust) || 0, foodDays };
+    if (pts.length < 4 || span < 9) return Object.assign(base, { status: 'nodata', text: `Only ${pts.length} weigh-in${pts.length === 1 ? '' : 's'} in the last 3 weeks. Ask them to weigh in at least 3 mornings a week so the trend is reliable.` });
+    const mx = pts.reduce((a, q) => a + q.x, 0) / pts.length, my = pts.reduce((a, q) => a + q.y, 0) / pts.length;
+    const slope = pts.reduce((a, q) => a + (q.x - mx) * (q.y - my), 0) / (pts.reduce((a, q) => a + (q.x - mx) ** 2, 0) || 1); // lb/day
+    const actual = slope * 7, bw = my;
+    const rate = p.goal === 'maintain' ? 0 : ((RATE[p.goal] || {})[p.pace || 'standard'] || 0);
+    const target = (p.goal === 'cut' ? -1 : p.goal === 'build' ? 1 : 0) * rate / 100 * bw; // lb/week
+    const r50 = (n) => Math.round(n / 50) * 50, clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+    let status = 'ok', change = 0, why;
+    const f1 = (n) => (n > 0 ? '+' : '') + n.toFixed(1);
+    if (p.goal === 'cut') {
+      if (actual > target * 0.5) { status = 'slow'; change = -clamp(r50((actual - target) * 500), 100, 300); why = actual >= 0 ? 'Weight is flat or up' : 'Losing slower than planned'; }
+      else if (actual < target * 1.6) { status = 'fast'; change = clamp(r50((target - actual) * 500), 100, 250); why = 'Losing faster than planned (muscle and energy at risk)'; }
+    } else if (p.goal === 'build') {
+      if (actual < target * 0.5) { status = 'slow'; change = clamp(r50((target - actual) * 500), 100, 300); why = 'Gaining slower than planned'; }
+      else if (actual > target * 2) { status = 'fast'; change = -clamp(r50((actual - target) * 500), 100, 250); why = 'Gaining faster than planned (likely extra fat)'; }
+    } else if (Math.abs(actual) > Math.max(0.5, bw * 0.003)) { status = actual > 0 ? 'fast' : 'slow'; change = -clamp(r50(actual * 500), -250, 250); if (Math.abs(change) < 100) change = Math.sign(change) * 100; why = actual > 0 ? 'Drifting up' : 'Drifting down'; }
+    const unitW = (lb) => (units === 'kg' ? f1(lb * 0.45359237) + ' kg' : f1(lb) + ' lb');
+    const text = `${unitW(actual)}/week vs goal ${p.goal === 'maintain' ? 'steady' : unitW(target) + '/week'}.` + (status === 'ok' ? ' On track: keep everything the same.' : ` ${why}: ${change > 0 ? 'add' : 'take off'} ${Math.abs(change)} kcal a day, mostly ${change > 0 ? 'added to' : 'from'} carbs.`);
+    const lowLog = foodDays != null && foodDays < 4;
+    return Object.assign(base, { status, actual, target, change, text, lowLog, newAdjust: base.kcalAdjust + change });
+  }
+
   window.Nutrition = {
     init(ctx) {
       C = ctx; Object.assign(ctx.actions, actions);
@@ -463,7 +522,7 @@
       ctx.modalActions['lib-new'] = () => { C.ui.recipeReturn = true; C.closeModal(); setTimeout(() => Recipes.open(null), 0); };
       document.addEventListener('change', onChange);
     },
-    active, dayInfo, targetsFor, foodCard, slotsFor, setupForm,
+    active, dayInfo, targetsFor, foodCard, slotsFor, setupForm, checkin, weightInfo,
     _macros: macros, _layout: layout, _distribute: distribute, _amounts: amounts, FOODS, TRAIN,
   };
 })();
