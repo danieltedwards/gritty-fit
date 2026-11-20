@@ -185,7 +185,7 @@
     if (profile) profileError = '';
     coach = null;
     if (profile && profile.coach_id) {
-      const { data } = await sb.from('profiles').select('id,full_name,email').eq('id', profile.coach_id).maybeSingle();
+      const { data } = await sb.from('profiles').select('id,full_name,email,targets').eq('id', profile.coach_id).maybeSingle();
       coach = data || null;
     }
   }
@@ -196,7 +196,9 @@
     ['calorieTarget', 'proteinTarget', 'carbTarget', 'fatTarget', 'workoutsPerWeek'].forEach((k) => { if (t[k] != null && t[k] !== '') st.settings[k] = Number(t[k]); });
     // GRIT Nutrition plan adjustments (calories ± and protein) live with the plan
     st.nutrition = st.nutrition || { overrides: {} };
-    st.nutrition.coach = { kcalAdjust: Number(t.kcalAdjust) || 0, protein: t.nProtein ? Number(t.nProtein) : null };
+    st.nutrition.coach = { kcalAdjust: Number(t.kcalAdjust) || 0, protein: t.nProtein ? Number(t.nProtein) : null,
+      method: t.nMethod || null, style: t.nStyle || null, macros: t.nMacros || null, cal: t.nCal ? Number(t.nCal) : null,
+      window: t.nWinStart && t.nWinEnd ? { start: t.nWinStart, end: t.nWinEnd } : null, mealPlan: t.nMealPlan || null, blocks: t.nBlocks ? Number(t.nBlocks) : null };
     st.settings.coachTargetsV = t.v;
     C.save();
     C.toast('Your coach updated your targets');
@@ -576,22 +578,73 @@
       const t = (data && data.targets) || {};
       const cl = coachData && coachData.clients.find((c) => c.client_id === el.dataset.id);
       const np = cl && cl.nutrition && cl.nutrition.profile;
-      C.openModal(`<h2>Targets for ${esc(el.dataset.name)}</h2>
-        <div class="sub" style="font-weight:700;margin:4px 0 8px">GRIT Nutrition plan${np ? '' : ' <span class="chip">not set up yet</span>'}</div>
-        ${np ? `<p class="hint" style="margin-top:0">${esc(({ cut: 'Cut', maintain: 'Maintain', build: 'Build' })[np.goal] || '')}${np.goal !== 'maintain' ? ' · ' + esc(np.pace || '') : ''} · ${np.meals} meals · ${np.sex === 'm' ? 'M' : 'F'} ${np.age}${np.flagged ? ' · <strong class="bad">flagged health answer: review before cutting</strong>' : ''}</p>` : ''}
-        <div class="fields-2">${field('Calories ± per day', C.inNum('kcalAdjust', t.kcalAdjust, 'step="10" placeholder="e.g. -150"'))}${field('Protein (g/day)', C.inNum('nProtein', t.nProtein, 'min="0" placeholder="auto"'))}</div>
-        <p class="hint">Adjusts every day of their plan; carbs and fat follow. Leave empty for the automatic numbers.</p>
-        <div class="sub" style="font-weight:700;margin:12px 0 8px">Fixed targets (clients without a plan)</div>
+      const N = window.Nutrition || {}, METHODS = N.METHODS || {}, STYLES = N.STYLES || {};
+      const myDef = (profile && profile.targets && profile.targets.defaultNut) || {};
+      const method = t.nMethod || myDef.method || 'auto';
+      const mt = (t.nMacros && t.nMacros.train) || {}, mr = (t.nMacros && t.nMacros.rest) || {};
+      const opt = (obj, val, blank) => (blank ? `<option value="">${blank}</option>` : '') + Object.entries(obj).filter(([k]) => k !== 'meal' && k !== 'zone' || (window.MealPlans && MealPlans.ready)).map(([k, v]) => `<option value="${k}" ${val === k ? 'selected' : ''}>${esc(v.n)}</option>`).join('');
+      const num = (name, v, ph) => C.inNum(name, v, `min="0" placeholder="${ph || ''}"`);
+      C.openModal(`<h2>Nutrition for ${esc(el.dataset.name)}</h2>
+        ${np ? `<p class="hint" style="margin-top:0">Their setup: ${esc(({ cut: 'Cut', maintain: 'Maintain', build: 'Build' })[np.goal] || '')}${np.goal !== 'maintain' ? ' · ' + esc(np.pace || '') : ''} · ${np.meals} meals · ${np.sex === 'm' ? 'M' : 'F'} ${np.age}${np.flagged ? ' · <strong class="bad">flagged health answer: review before cutting</strong>' : ''}</p>` : '<p class="hint" style="margin-top:0">They haven\'t filled in their nutrition setup yet. Coach macros and the Plate method work without it.</p>'}
+        <div class="fields-2">${field('Method', `<select name="nMethod">${opt(METHODS, method)}</select>`)}${field('Diet style', `<select name="nStyle">${opt(STYLES, t.nStyle || '', 'Their choice')}</select>`)}</div>
+        <p class="hint" id="nm-desc" style="margin-top:0"></p>
+        <div data-m="auto"><div class="fields-2">${field('Calories ± per day', C.inNum('kcalAdjust', t.kcalAdjust, 'step="10" placeholder="e.g. -150"'))}${field('Protein (g/day)', num('nProtein', t.nProtein, 'auto'))}</div>
+          <p class="hint">Adjusts every day of their plan; carbs and fat follow. Leave empty for the automatic numbers.</p></div>
+        <div data-m="coach"><div class="sub" style="font-weight:700;margin:4px 0 6px">Training days</div>
+          <div class="fields-4">${field('kcal', num('mt_kcal', mt.kcal))}${field('Protein', num('mt_p', mt.p))}${field('Carbs', num('mt_c', mt.c))}${field('Fat', num('mt_f', mt.f))}</div>
+          <div class="sub" style="font-weight:700;margin:4px 0 6px">Rest days</div>
+          <div class="fields-4">${field('kcal', num('mr_kcal', mr.kcal))}${field('Protein', num('mr_p', mr.p))}${field('Carbs', num('mr_c', mr.c))}${field('Fat', num('mr_f', mr.f))}</div>
+          <p class="hint" id="nm-sum"></p>
+          <p class="hint">Grams per day. With protein, carbs and fat filled in, calories come from those. Leave carbs empty and give calories to fill carbs from what's left. Rest days empty = same as training days.</p></div>
+        <div data-m="calpro"><div class="fields-2">${field('Calories / day', num('nCal', t.nCal, 'auto'))}${field('Protein (g/day)', num('nProtein2', t.nProtein, 'auto'))}</div>
+          <p class="hint">Leave empty to use GRIT's calculated numbers.</p></div>
+        <div data-m="plate"><p class="hint">Portions by hand size: palms of protein, cupped hands of carbs, thumbs of fat, fists of veggies. Check-ins suggest adding or dropping a carb portion.</p></div>
+        <div class="fields-2">${field('Eating window from', `<input type="time" name="wstart" value="${esc(t.nWinStart || '')}">`)}${field('to (optional)', `<input type="time" name="wend" value="${esc(t.nWinEnd || '')}">`)}</div>
+        <label class="ed-check"><input type="checkbox" name="mkdef"><span>Make this method and diet style my default for new clients</span></label>
+        <details style="margin-top:10px"><summary class="sub" style="font-weight:700">Fixed targets (clients without a plan) · workouts per week</summary>
         <div class="fields-2">${field('Daily calories', C.inNum('calorieTarget', t.calorieTarget, 'min="0"'))}${field('Protein (g)', C.inNum('proteinTarget', t.proteinTarget, 'min="0"'))}</div>
         <div class="fields-2">${field('Carbs (g)', C.inNum('carbTarget', t.carbTarget, 'min="0"'))}${field('Fat (g)', C.inNum('fatTarget', t.fatTarget, 'min="0"'))}</div>
-        ${field('Workouts per week', C.inNum('workoutsPerWeek', t.workoutsPerWeek, 'min="0" max="14" step="1"'))}
-        <p class="hint">These replace the client's own targets the next time their app syncs. Leave a box empty to keep theirs.</p>`, async (fd) => {
-        const nt = { v: Date.now() };
-        ['calorieTarget', 'proteinTarget', 'carbTarget', 'fatTarget', 'workoutsPerWeek', 'kcalAdjust', 'nProtein'].forEach((k) => { const v = fd.get(k); if (v !== '' && v != null) nt[k] = Number(v); });
+        ${field('Workouts per week', C.inNum('workoutsPerWeek', t.workoutsPerWeek, 'min="0" max="14" step="1"'))}</details>
+        <p class="hint">Changes reach them the next time their app syncs, with a notification.</p>`, async (fd) => {
+        const nt = Object.assign({}, t, { v: Date.now() });
+        const n = (k) => { const v = fd.get(k); return v === '' || v == null ? null : Number(v); };
+        ['calorieTarget', 'proteinTarget', 'carbTarget', 'fatTarget', 'workoutsPerWeek', 'kcalAdjust', 'nProtein', 'nCal'].forEach((k) => { delete nt[k]; });
+        ['calorieTarget', 'proteinTarget', 'carbTarget', 'fatTarget', 'workoutsPerWeek'].forEach((k) => { if (n(k) != null) nt[k] = n(k); });
+        const m = fd.get('nMethod') || 'auto';
+        nt.nMethod = m; nt.nStyle = fd.get('nStyle') || null;
+        if (m === 'auto') { if (n('kcalAdjust') != null) nt.kcalAdjust = n('kcalAdjust'); if (n('nProtein') != null) nt.nProtein = n('nProtein'); }
+        else if (t.kcalAdjust != null) nt.kcalAdjust = t.kcalAdjust; // keep check-in adjustments when switching methods
+        if (m === 'calpro') { if (n('nCal') != null) nt.nCal = n('nCal'); if (n('nProtein2') != null) nt.nProtein = n('nProtein2'); }
+        if (m === 'coach') {
+          const grab = (pre) => { const o = {}; ['kcal', 'p', 'c', 'f'].forEach((k) => { if (n(pre + k) != null) o[k] = n(pre + k); }); return o; };
+          const tr = grab('mt_'), rs = grab('mr_');
+          if (!tr.p && !tr.kcal) { C.toast('Give at least calories and protein for training days'); return false; }
+          nt.nMacros = { train: tr, rest: Object.keys(rs).length ? rs : tr };
+        }
+        const ws = fd.get('wstart'), we = fd.get('wend');
+        if (ws && we) { nt.nWinStart = ws; nt.nWinEnd = we; } else { delete nt.nWinStart; delete nt.nWinEnd; }
         const { error } = await sb.from('profiles').update({ targets: nt }).eq('id', el.dataset.id);
         if (error) { C.toast(error.message); return false; }
-        C.toast('Targets saved');
-      });
+        if (fd.get('mkdef') === 'on') {
+          const mine = Object.assign({}, profile.targets || {}, { defaultNut: { method: m, style: nt.nStyle } });
+          const r = await sb.from('profiles').update({ targets: mine }).eq('id', user.id);
+          if (!r.error) profile.targets = mine;
+        }
+        C.toast('Nutrition saved');
+      }, { saveLabel: 'Save' });
+      const f = document.getElementById('modal-form');
+      const sync = () => {
+        const m = f.querySelector('[name=nMethod]').value;
+        f.querySelectorAll('[data-m]').forEach((x) => { x.hidden = x.dataset.m !== m; });
+        const d = f.querySelector('#nm-desc'); if (d) d.textContent = (METHODS[m] && METHODS[m].d) || '';
+      };
+      f.querySelector('[name=nMethod]').addEventListener('change', sync); sync();
+      const sum = () => {
+        const v = (k) => Number((f.querySelector(`[name=${k}]`) || {}).value) || 0;
+        const line = (pre, lbl) => (v(pre + 'p') && v(pre + 'c') && v(pre + 'f') ? `${lbl}: ${v(pre + 'p') * 4 + v(pre + 'c') * 4 + v(pre + 'f') * 9} kcal from the macros` : '');
+        const el2 = f.querySelector('#nm-sum'); if (el2) el2.textContent = [line('mt_', 'Training'), line('mr_', 'Rest')].filter(Boolean).join(' · ');
+      };
+      f.addEventListener('input', sum); sum();
     },
     'coach-access': async (el) => {
       const plans = await fetchPlans().catch(() => []);
@@ -755,7 +808,7 @@
           <button class="btn small" data-action="chat-with" data-id="${c.client_id}" data-name="${esc(name)}">💬 Chat${window.Chat && Chat.unread(c.client_id) ? ` (${Chat.unread(c.client_id)})` : ''}</button>
           <button class="btn small" data-action="coach-send-workout" data-id="${c.client_id}" data-name="${esc(name)}">🏋️ Send workout</button>
           <button class="btn small" data-action="coach-note" data-id="${c.client_id}" data-name="${esc(name)}">Note</button>
-          <button class="btn small" data-action="coach-targets" data-id="${c.client_id}" data-name="${esc(name)}">Targets</button>
+          <button class="btn small" data-action="coach-targets" data-id="${c.client_id}" data-name="${esc(name)}">🍽 Nutrition</button>
           <button class="btn small" data-action="coach-access" data-id="${c.client_id}" data-name="${esc(name)}">Plans</button>
           <button class="btn small" data-action="coach-customize" data-id="${c.client_id}" data-name="${esc(name)}" data-plan="${esc((c.program && c.program.planId) || '')}">Customize</button>
           <button class="del" data-action="coach-remove" data-id="${c.client_id}" data-name="${esc(name)}" aria-label="Remove client">×</button></div></div>`;

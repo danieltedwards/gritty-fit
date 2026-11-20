@@ -49,6 +49,94 @@
     cheese: { n: 'Cheddar cheese', p: 22.9, c: 3.4, f: 33.3, u: 'oz', g: 28.35, k: 'fat' },
     carbpowder: { n: 'Carb powder (dextrin / dextrose)', p: 0, c: 95, f: 0, u: 'g', g: 1, k: 'carb' },
     sportsdrink: { n: 'Sports drink', p: 0, c: 6, f: 0, u: 'fl oz', g: 29.6, k: 'carb' },
+    tofu: { n: 'Firm tofu', p: 17.3, c: 2.8, f: 8.7, u: 'g', g: 1, k: 'protein' },
+    tempeh: { n: 'Tempeh', p: 20.3, c: 7.6, f: 10.8, u: 'g', g: 1, k: 'protein' },
+    seitan: { n: 'Seitan', p: 75, c: 14, f: 1.9, u: 'g', g: 1, k: 'protein' },
+    peaprotein: { n: 'Pea / plant protein powder', p: 80, c: 3, f: 6, u: 'scoops', g: 30, k: 'protein' },
+    edamame: { n: 'Edamame (shelled)', p: 11.9, c: 8.9, f: 5.2, u: 'cups', g: 155, k: 'protein' },
+    lentils: { n: 'Lentils (cooked)', p: 9, c: 20.1, f: 0.4, u: 'cups', g: 198, k: 'carb' },
+    chickpeas: { n: 'Chickpeas (cooked)', p: 8.9, c: 27.4, f: 2.6, u: 'cups', g: 164, k: 'carb' },
+    blackbeans: { n: 'Black beans (cooked)', p: 8.9, c: 23.7, f: 0.5, u: 'cups', g: 172, k: 'carb' },
+    tuna: { n: 'Tuna (canned in water)', p: 25.5, c: 0, f: 0.8, u: 'oz', g: 28.35, k: 'protein' },
+    beef85: { n: '85% lean ground beef (cooked)', p: 26, c: 0, f: 15, u: 'oz', g: 28.35, k: 'protein' },
+    walnuts: { n: 'Walnuts', p: 15.2, c: 13.7, f: 65.2, u: 'g', g: 1, k: 'fat' },
+    chia: { n: 'Chia seeds', p: 16.5, c: 42.1, f: 30.7, u: 'tbsp', g: 12, k: 'fat' },
+    coconut: { n: 'Coconut oil', p: 0, c: 0, f: 100, u: 'tbsp', g: 13.6, k: 'fat' },
+    butter: { n: 'Butter / ghee', p: 0.9, c: 0.1, f: 81, u: 'tbsp', g: 14, k: 'fat' },
+  };
+  // what each food is, for diet styles
+  const TAGS = { chicken: 'meat', beef93: 'meat red', sirloin: 'meat red', turkey: 'meat', beef85: 'meat red', salmon: 'fish', whitefish: 'fish', shrimp: 'fish', tuna: 'fish',
+    eggwhites: 'egg', eggs: 'egg', greekyog: 'dairy', cottage: 'dairy', whey: 'dairy', cheese: 'dairy', butter: 'dairy',
+    rice: 'grain white', oats: 'grain', bread: 'grain gluten', pasta: 'grain gluten', quinoa: 'grain', seitan: 'grain gluten',
+    potato: 'starch', sweetpot: 'starch', banana: 'fruit', oj: 'fruit sugar', berries: 'fruit lowcarb',
+    pb: 'legume', tofu: 'legume soy', tempeh: 'legume soy', edamame: 'legume soy', lentils: 'legume', chickpeas: 'legume', blackbeans: 'legume', peaprotein: 'legume',
+    almonds: 'nut', walnuts: 'nut', chia: 'seed', avocado: 'plantfat', olive: 'plantfat', coconut: 'plantfat', carbpowder: 'sugar', sportsdrink: 'sugar' };
+  const tagged = (key, t) => (' ' + (TAGS[key] || '') + ' ').includes(' ' + t + ' ');
+  // Diet styles: which foods are out, the default picks, and how they shift macros
+  const STYLES = {
+    standard: { n: 'Standard', out: () => false },
+    vertical: { n: 'Vertical Diet', out: (k) => tagged(k, 'legume') || tagged(k, 'gluten') || k === 'quinoa' || k === 'almonds' || k === 'walnuts' || k === 'chia',
+      prefs: { protein: ['sirloin', 'beef93', 'eggs', 'salmon', 'greekyog'], carb: ['rice', 'potato', 'oj', 'sweetpot'], fat: ['eggs', 'butter', 'olive', 'avocado'] },
+      note: 'Red meat, eggs, white rice, potatoes, dairy and easy-to-digest veggies (carrots, spinach, peppers).' },
+    paleo: { n: 'Paleo', out: (k) => tagged(k, 'grain') || tagged(k, 'legume') || tagged(k, 'dairy') || tagged(k, 'sugar'),
+      prefs: { protein: ['chicken', 'sirloin', 'salmon', 'eggs', 'turkey'], carb: ['sweetpot', 'potato', 'banana', 'berries'], fat: ['avocado', 'olive', 'almonds', 'coconut'] },
+      note: 'Meat, fish, eggs, veggies, fruit, potatoes, nuts and oils. No grains, beans or dairy.' },
+    pescatarian: { n: 'Pescatarian', out: (k) => tagged(k, 'meat'),
+      prefs: { protein: ['salmon', 'whitefish', 'shrimp', 'tuna', 'greekyog', 'eggwhites'], carb: ['rice', 'potato', 'oats', 'banana'], fat: ['avocado', 'olive', 'eggs', 'almonds'] },
+      note: 'Fish and seafood, eggs and dairy. No meat.' },
+    vegetarian: { n: 'Vegetarian', out: (k) => tagged(k, 'meat') || tagged(k, 'fish'),
+      prefs: { protein: ['greekyog', 'eggwhites', 'cottage', 'tofu', 'tempeh', 'whey'], carb: ['rice', 'oats', 'lentils', 'potato', 'banana'], fat: ['eggs', 'avocado', 'pb', 'cheese'] },
+      note: 'Eggs, dairy, tofu, tempeh and beans. No meat or fish.' },
+    vegan: { n: 'Vegan', out: (k) => tagged(k, 'meat') || tagged(k, 'fish') || tagged(k, 'dairy') || tagged(k, 'egg'),
+      prefs: { protein: ['tofu', 'tempeh', 'seitan', 'peaprotein', 'edamame'], carb: ['rice', 'oats', 'lentils', 'chickpeas', 'potato'], fat: ['avocado', 'pb', 'almonds', 'olive', 'chia'] },
+      note: 'All plants: tofu, tempeh, seitan, beans, lentils and plant protein. No animal foods.' },
+    keto: { n: 'Keto / low-carb', out: (k) => FOODS[k].k === 'carb' && !tagged(k, 'lowcarb') || tagged(k, 'grain') || tagged(k, 'sugar') || ['banana', 'oj', 'pb', 'chia', 'edamame'].includes(k),
+      prefs: { protein: ['beef85', 'salmon', 'chicken', 'eggs', 'sirloin'], carb: ['berries'], fat: ['avocado', 'olive', 'cheese', 'almonds', 'butter'] },
+      note: 'Carbs kept under about 30 g a day, mostly from veggies and berries; fat makes up the rest.', carbCap: 30 },
+  };
+  const styleOf = (n) => (n && ((n.coach && n.coach.style) || (n.profile && n.profile.style))) || 'standard';
+  const styleOK = (style, key) => !(STYLES[style] || STYLES.standard).out(key);
+  function prefsFor(p, style) {
+    const sd = STYLES[style] || STYLES.standard, base = (p && p.prefs) || DEFAULT_PREFS, out = {};
+    ['protein', 'carb', 'fat'].forEach((g) => {
+      let arr = (base[g] || []).filter((k) => FOODS[k] && styleOK(style, k));
+      if (arr.length < 2 && sd.prefs) arr = sd.prefs[g].filter((k) => FOODS[k] && styleOK(style, k));
+      if (!arr.length) arr = Object.keys(FOODS).filter((k) => FOODS[k].k === g && styleOK(style, k) && !tagged(k, 'sugar')).slice(0, 4);
+      out[g] = arr;
+    });
+    return out;
+  }
+  // a recipe fits a style? (recipes aren't tagged by diet, so read the ingredients)
+  const RX = { meat: /\b(chicken|beef|steak|pork|bacon|ham|turkey|sausage|lamb|bison|venison|prosciutto|pepperoni|salami|chorizo|meatball|jerky)\b/i,
+    fish: /\b(salmon|tuna|shrimp|cod|tilapia|fish|crab|lobster|scallop|sardine|anchov|halibut|mahi|trout)\b/i,
+    dairy: /\b(milk|cheese|yogurt|yoghurt|butter|cream|whey|casein|parmesan|mozzarella|cheddar|feta|ricotta|ghee|kefir)\b/i,
+    egg: /\b(eggs?|egg whites?)\b/i, grain: /\b(rice|oats?|oatmeal|bread|pasta|noodles?|flour|tortilla|quinoa|couscous|bagel|cereal|granola|barley|wheat)\b/i,
+    legume: /\b(beans?|lentils?|chickpeas?|peanuts?|peanut butter|tofu|edamame|soy|hummus|peas)\b/i, sugar: /\b(sugar|honey|syrup|candy|chocolate chips)\b/i,
+    plantmilk: /\b(almond|oat|soy|coconut|cashew)\s+(milk|yogurt|cream|butter)\b/i };
+  function recipeFits(r, style) {
+    if (!r || style === 'standard') return true;
+    const txt = ((r.ingredients || []).map((i) => (typeof i === 'string' ? i : [i.item, i.name, i.text].filter(Boolean).join(' '))).join(' ') + ' ' + (r.name || '')).replace(RX.plantmilk, ' ');
+    const has = (k) => RX[k].test(txt);
+    if (style === 'vegan') return !has('meat') && !has('fish') && !has('dairy') && !has('egg');
+    if (style === 'vegetarian') return !has('meat') && !has('fish');
+    if (style === 'pescatarian') return !has('meat');
+    if (style === 'paleo') return !has('grain') && !has('legume') && !has('dairy') && !has('sugar');
+    if (style === 'vertical') return !has('legume') && !/\b(bread|pasta|noodles?|flour|tortilla|bagel)\b/i.test(txt);
+    if (style === 'keto') { const nc = r.netCarbs != null ? Number(r.netCarbs) : (r.per ? r.per.c : 99); return nc <= 12; }
+    return true;
+  }
+  // ---------- methods ----------
+  const METHODS = {
+    auto: { n: 'GRIT Auto (RP)', d: 'Calculated macros that adjust with weigh-ins and 2-week check-ins.' },
+    coach: { n: 'Coach macros', d: 'Your coach sets calories and macros (training and rest days can differ).' },
+    calpro: { n: 'Calories + Protein', d: 'Just two numbers to hit each day.' },
+    plate: { n: 'Plate method', d: 'No counting: build each meal as ½ veggies, ¼ protein, ¼ carbs and a thumb of fat.' },
+    meal: { n: 'Meal plan', d: 'A set meal plan from your coach; tick meals off.' },
+    zone: { n: 'Zone blocks', d: 'Protein, carb and fat blocks per meal.' },
+  };
+  const methodOf = (n) => {
+    const m = (n && n.coach && n.coach.method) || (n && n.method) || (window.Cloud && Cloud.coach && Cloud.coach.targets && Cloud.coach.targets.defaultNut && Cloud.coach.targets.defaultNut.method) || 'auto';
+    return METHODS[m] ? m : 'auto';
   };
   const DEFAULT_PREFS = { protein: ['chicken', 'beef93', 'eggwhites', 'salmon', 'greekyog'], carb: ['rice', 'potato', 'oats', 'banana'], fat: ['avocado', 'olive', 'pb', 'eggs'] };
   const VEG = 'Spinach, carrots, peppers, broccoli, greens';
@@ -99,6 +187,7 @@
     let F = r5(Math.max(0.3 * bw, fatPct * kcalFor('rest') / 9));
     const kcal = kcalFor(type);
     let Cg = (kcal - P * 4 - F * 9) / 4;
+    if (p.style === 'keto') { Cg = Math.min(Cg, 30); F = r5(Math.max(0.3 * bw, (kcal - P * 4 - Cg * 4) / 9)); return { kcal: Math.round(P * 4 + Cg * 4 + F * 9), protein: P, carbs: Math.max(20, r5(Cg)), fat: F, maintenance: Math.round(maintFor(type)), bmr: Math.round(bmr), delta: Math.round(delta) }; }
     if (Cg < 30) { F = r5(Math.max(0.25 * bw, (kcal - P * 4 - 30 * 4) / 9)); Cg = (kcal - P * 4 - F * 9) / 4; }
     Cg = Math.max(25, r5(Cg));
     return { kcal: Math.round(P * 4 + Cg * 4 + F * 9), protein: P, carbs: Cg, fat: F, maintenance: Math.round(maintFor(type)), bmr: Math.round(bmr), delta: Math.round(delta) };
@@ -158,7 +247,13 @@
       if (picks.carb2 && cRemain > 8) cb2 = take(picks.carb2, (cRemain / FOODS[picks.carb2].c) * 100);
     }
     const fRemain = m.f - (pr ? pr.f : 0) - (cb ? cb.f : 0) - (cb2 ? cb2.f : 0);
-    if (picks.fat && fRemain > 3) take(picks.fat, (fRemain / FOODS[picks.fat].f) * 100);
+    if (picks.fat && fRemain > 3) {
+      // one whole food covers up to ~20 g of fat (no "10 eggs"); oil / butter tops up the rest
+      const oily = ['olive', 'coconut', 'butter'].includes(picks.fat), cap = oily ? fRemain : Math.min(fRemain, 20);
+      const ft = take(picks.fat, (cap / FOODS[picks.fat].f) * 100);
+      const left = fRemain - (ft ? ft.f : 0);
+      if (left > 4 && picks.fat2 && picks.fat2 !== picks.fat) take(picks.fat2, (left / FOODS[picks.fat2].f) * 100);
+    }
     return out;
   }
   const qtyText = (it) => `${it.unit === 'g' ? it.qty + ' g' : `${fmtQty(it.qty)} ${it.unit === 'oz' ? 'oz' : it.qty === 1 ? it.unit.replace(/s$/, '') : it.unit}`}`;
@@ -167,20 +262,37 @@
   // ---------- per-day plan ----------
   function dayInfo(iso) {
     const st = S(), n = st.nutrition;
-    if (!n || !n.profile) return null;
-    const p = n.profile;
+    if (!n || !(n.profile || coachRun(n))) return null;
+    const p = n.profile || COACH_ONLY_PROFILE(st);
     const ov = (n.overrides || {})[iso] || {};
     const [y, mo, d] = iso.split('-').map(Number);
     const wd = new Date(y, mo - 1, d).getDay();
     const type = ov.type || (p.schedule && p.schedule[wd]) || 'rest';
     const after = ov.after ?? p.trainAfter ?? 2;
-    const bw = lbOf(st, p), bf = bfOf(st, p);
-    const t = macros(Object.assign({}, p, { bodyFat: bf }), type, bw, n.coach || {});
+    const bw = lbOf(st, p), bf = bfOf(st, p), method = methodOf(n), style = styleOf(n), co = n.coach || {};
+    let t = macros(Object.assign({}, p, { bodyFat: bf, style }), type, bw, co);
+    const adj = Number(co.kcalAdjust) || 0;
+    if (method === 'coach' && co.macros) {
+      // coach's numbers for training / rest days; the 2-week check-in adjustment comes off (or on) carbs
+      const src = (type === 'rest' ? co.macros.rest : co.macros.train) || co.macros.train || co.macros.rest || {};
+      const P = Number(src.p) || t.protein, F = src.f != null && src.f !== '' ? Number(src.f) : t.fat;
+      let Cg = src.c != null && src.c !== '' ? Number(src.c) : Math.max(0, ((Number(src.kcal) || t.kcal) - P * 4 - F * 9) / 4);
+      Cg = Math.max(0, Math.round(Cg + adj / 4));
+      t = Object.assign({}, t, { protein: P, carbs: Cg, fat: F, kcal: Math.round(P * 4 + Cg * 4 + F * 9) });
+    } else if (method === 'calpro' && (co.cal || co.protein)) {
+      const kcal = (Number(co.cal) || t.kcal) + (co.cal ? adj : 0), P = Number(co.protein) || t.protein;
+      const Cg = Math.max(25, Math.round((kcal - P * 4 - t.fat * 9) / 4));
+      t = Object.assign({}, t, { kcal: Math.round(P * 4 + Cg * 4 + t.fat * 9), protein: P, carbs: Cg });
+    }
     const meals = distribute(layout(p, type, after), t, type);
-    return { p, type, after, bw, bf, targets: t, meals, override: !!(ov.type || ov.after != null) };
+    return { p, type, after, bw, bf, method, style, targets: t, meals, override: !!(ov.type || ov.after != null) };
   }
-  function targetsFor(iso) { const d = dayInfo(iso); return d ? d.targets : null; }
-  const active = () => !!(S().nutrition && S().nutrition.profile);
+  function targetsFor(iso) { const d = dayInfo(iso); return d && d.method !== 'plate' ? d.targets : null; }
+  // a coach can run a client on Coach macros or the Plate method before the client fills in the setup
+  const coachRun = (n) => !!(n && n.coach && ((n.coach.method === 'coach' && n.coach.macros) || n.coach.method === 'plate'));
+  const COACH_ONLY_PROFILE = (st) => ({ sex: st.settings.sex || 'f', age: st.settings.age || 30, heightIn: (st.settings.heightCm || 168) / 2.54, weightLb: 160, goal: 'maintain', pace: 'standard', job: 'desk', meals: 4, trainAfter: 2, shake: true,
+    schedule: { 0: 'rest', 1: 'moderate', 2: 'moderate', 3: 'rest', 4: 'moderate', 5: 'moderate', 6: 'light' } });
+  const active = () => { const n = S().nutrition; return !!(n && (n.profile || coachRun(n))); };
 
   // ---------- setup ----------
   function setupForm() {
@@ -192,7 +304,7 @@
     const sched = p.schedule || { 0: 'rest', 1: 'moderate', 2: 'moderate', 3: 'rest', 4: 'moderate', 5: 'moderate', 6: 'light' };
     const sel = (name, val, opts) => `<select name="${name}">${opts.map(([v, l]) => `<option value="${v}" ${String(val) === String(v) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
     const prefs = p.prefs || DEFAULT_PREFS;
-    const chk = (group, key) => `<label class="pill-check"><input type="checkbox" name="pref_${group}" value="${key}" ${prefs[group].includes(key) ? 'checked' : ''}><span>${esc(FOODS[key].n.replace(/ \(.*\)/, ''))}</span></label>`;
+    const chk = (group, key) => `<label class="pill-check"><input type="checkbox" name="pref_${group}" value="${key}" ${(prefs[group] || []).includes(key) ? 'checked' : ''}><span>${esc(FOODS[key].n.replace(/ \(.*\)/, ''))}</span></label>`;
     C.openModal(`<h2>Your nutrition plan</h2>
       <p class="hint" style="margin-top:0">Takes 2 minutes. Your coach can fine-tune it afterwards.</p>
       <div class="fields-2">${C.field('Sex', sel('sex', p.sex || st.settings.sex || 'f', [['f', 'Female'], ['m', 'Male']]))}${C.field('Age', C.inNum('age', p.age || st.settings.age, 'min="14" max="90" required'))}</div>
@@ -206,16 +318,25 @@
       <p class="hint">Light = easy session or mobility · Moderate = normal session · Heavy = long/very hard session or two-a-day. You can change any single day from the Food tab.</p>
       <div class="fields-2">${C.field('Meals per day', sel('meals', p.meals || 4, [[3, '3'], [4, '4'], [5, '5'], [6, '6']]))}${C.field('Usually train', sel('after', p.trainAfter ?? 2, [[0, 'First thing'], [1, 'After meal 1'], [2, 'After meal 2'], [3, 'After meal 3'], [4, 'After meal 4']]))}</div>
       <label class="ed-check" style="margin-bottom:10px"><input type="checkbox" name="shake" ${p.shake === false ? '' : 'checked'}><span>Protein + carb shake around training</span></label>
+      <div class="sub" style="font-weight:700;margin:10px 0 6px">How you want to eat</div>
+      ${n.coach && n.coach.method ? `<p class="hint" style="margin-top:0">Method set by your coach: <strong>${esc(METHODS[methodOf(n)].n)}</strong></p>`
+        : C.field('Method', sel('method', methodOf(n), ['auto', 'calpro', 'plate'].map((k) => [k, METHODS[k].n])), 'Auto: full macros that adjust over time · Calories + Protein: two numbers · Plate: no counting')}
+      ${n.coach && n.coach.style ? `<p class="hint">Diet style set by your coach: <strong>${esc(STYLES[styleOf(n)].n)}</strong></p>`
+        : C.field('Diet style', sel('style', p.style || 'standard', Object.entries(STYLES).map(([k, v]) => [k, v.n])), 'Removes foods you don\'t eat from suggestions and recipes.')}
+      ${n.coach && n.coach.window ? '' : `<div class="fields-2">${C.field('Eating window from (optional)', `<input type="time" name="wstart" value="${esc((n.window || {}).start || '')}">`)}${C.field('to', `<input type="time" name="wend" value="${esc((n.window || {}).end || '')}">`)}</div>`}
       <div class="sub" style="font-weight:700;margin:10px 0 6px">Foods you like</div>
-      <div class="pill-row">${DEFAULT_PREFS.protein.concat(['sirloin', 'turkey', 'whitefish', 'shrimp', 'cottage']).map((k) => chk('protein', k)).join('')}</div>
-      <div class="pill-row">${['rice', 'potato', 'sweetpot', 'oats', 'banana', 'berries', 'bread', 'pasta', 'quinoa', 'oj'].map((k) => chk('carb', k)).join('')}</div>
-      <div class="pill-row">${['avocado', 'olive', 'pb', 'almonds', 'eggs', 'cheese'].map((k) => chk('fat', k)).join('')}</div>
+      <div class="pill-row">${DEFAULT_PREFS.protein.concat(['sirloin', 'turkey', 'beef85', 'whitefish', 'shrimp', 'tuna', 'cottage', 'tofu', 'tempeh', 'seitan', 'edamame', 'peaprotein']).map((k) => chk('protein', k)).join('')}</div>
+      <div class="pill-row">${['rice', 'potato', 'sweetpot', 'oats', 'banana', 'berries', 'bread', 'pasta', 'quinoa', 'oj', 'lentils', 'chickpeas', 'blackbeans'].map((k) => chk('carb', k)).join('')}</div>
+      <div class="pill-row">${['avocado', 'olive', 'pb', 'almonds', 'walnuts', 'chia', 'eggs', 'cheese', 'butter', 'coconut'].map((k) => chk('fat', k)).join('')}</div>
+      <p class="hint" style="margin-top:0">Anything your diet style rules out is skipped automatically.</p>
       <div class="sub" style="font-weight:700;margin:12px 0 6px">Health check</div>
       <label class="ed-check"><input type="checkbox" name="flag"><span>I'm pregnant or breastfeeding, have a medical condition affecting my diet (e.g. diabetes, kidney disease), or have a history of an eating disorder</span></label>
       <div id="nut-preview" class="card" style="background:var(--surface-2);margin-top:12px"></div>`, (fd) => {
       const prof = readForm(fd);
       if (!prof) { C.toast('Fill in age, height and weight'); return false; }
       st.nutrition = Object.assign({ overrides: {}, coach: {} }, st.nutrition || {}, { profile: prof });
+      if (fd.get('method')) st.nutrition.method = fd.get('method');
+      if (fd.has('wstart')) st.nutrition.window = fd.get('wstart') && fd.get('wend') ? { start: fd.get('wstart'), end: fd.get('wend') } : null;
       st.settings.sex = prof.sex; st.settings.age = prof.age; st.settings.heightCm = Math.round(prof.heightIn * 2.54 * 10) / 10;
       const typed = Math.round((kg ? prof.weightLb * 0.45359237 : prof.weightLb) * 10) / 10, cur = lbOf(st, prof);
       const bfChanged = prof.bodyFat && prof.bodyFat !== bfOf(st, Object.assign({}, prof, { bodyFat: null }));
@@ -236,7 +357,7 @@
       const flagged = fd.get('flag') === 'on';
       const pick = (g) => { const v = fd.getAll('pref_' + g); return v.length ? v : DEFAULT_PREFS[g]; };
       return { sex: fd.get('sex'), age, heightIn: Math.round(hIn2 * 10) / 10, weightLb: kg ? w / 0.45359237 : w, bodyFat: Number(fd.get('bf')) || null, job: fd.get('job'),
-        goal: flagged && fd.get('goal') === 'cut' ? 'maintain' : fd.get('goal'), pace: fd.get('pace'), schedule, meals: Number(fd.get('meals')), trainAfter: Number(fd.get('after')),
+        style: fd.get('style') || p.style || 'standard', goal: flagged && fd.get('goal') === 'cut' ? 'maintain' : fd.get('goal'), pace: fd.get('pace'), schedule, meals: Number(fd.get('meals')), trainAfter: Number(fd.get('after')),
         shake: fd.get('shake') === 'on', prefs: { protein: pick('protein'), carb: pick('carb'), fat: pick('fat') }, flagged, updated: C.todayISO() };
     }
     const preview = () => {
@@ -257,6 +378,51 @@
   }
 
   // ---------- Food tab ----------
+  // ---------- eating window (intermittent fasting) ----------
+  const winOf = (n) => { const w = (n && n.coach && n.coach.window) || (n && n.window); return w && w.start && w.end ? w : null; };
+  const hm = (t) => { const [h, m] = String(t).split(':').map(Number); return h * 60 + (m || 0); };
+  const fmtT = (t) => { const [h, m] = String(t).split(':').map(Number); const ap = h >= 12 ? 'pm' : 'am'; const hh = h % 12 || 12; return m ? `${hh}:${String(m).padStart(2, '0')} ${ap}` : `${hh} ${ap}`; };
+  function windowHTML(n, iso) {
+    const w = winOf(n); if (!w) return '';
+    let status = '';
+    if (iso === C.todayISO()) {
+      const now = new Date(), cur = now.getHours() * 60 + now.getMinutes(), a = hm(w.start), b = hm(w.end);
+      const open = a <= b ? cur >= a && cur < b : cur >= a || cur < b;
+      const until = (x) => { const d = (x - cur + 1440) % 1440; return d >= 60 ? `${Math.floor(d / 60)}h ${d % 60}m` : `${d}m`; };
+      status = open ? ` · <strong>open</strong>, closes in ${until(b)}` : ` · closed, opens in ${until(a)}`;
+    }
+    return `<div class="win-chip">⏱ Eating window ${fmtT(w.start)}–${fmtT(w.end)}${status}</div>`;
+  }
+  // ---------- plate method: no counting ----------
+  function plateCard(d, iso, items) {
+    const st = S(), n = st.nutrition, p = d.p, m = p.sex === 'm';
+    const M = Math.min(6, Math.max(2, p.meals || 4));
+    const extra = Math.round((Number((n.coach || {}).kcalAdjust) || 0) / 100); // ±1 cupped hand of carbs ≈ ±100 kcal
+    const plates = ((n.plates || {})[iso]) || [];
+    const veg = d.style === 'keto' ? '1–2 fists of veggies' : '1–2 fists of veggies';
+    const prot = `${m ? 2 : 1} palm${m ? 's' : ''} of protein`;
+    const carb = d.style === 'keto' ? 'skip starchy carbs (berries are fine)' : `${m ? 2 : 1} cupped hand${m ? 's' : ''} of carbs`;
+    const fat = `${m ? 2 : 1} thumb${m ? 's' : ''} of fat`;
+    const sd = STYLES[d.style] || STYLES.standard;
+    const ideas = (g) => prefsFor(p, d.style)[g].slice(0, 3).map((k) => FOODS[k].n.replace(/ \(.*\)/, '')).join(', ');
+    let h = `<div class="card"><div class="card-head"><h2>Today's plate</h2><button class="btn small" data-action="nut-setup">Edit</button></div>
+      ${windowHTML(n, iso)}
+      <div class="plate-row"><svg class="plate-svg" viewBox="0 0 120 120" role="img" aria-label="Plate: half veggies, a quarter protein, a quarter carbs">
+        <circle cx="60" cy="60" r="56" fill="var(--surface-2)" stroke="var(--line)" stroke-width="2"/>
+        <path d="M60 60 L60 8 A52 52 0 0 0 60 112 Z" fill="var(--good)" opacity=".75"/>
+        <path d="M60 60 L60 8 A52 52 0 0 1 112 60 Z" fill="var(--accent)"/>
+        <path d="M60 60 L112 60 A52 52 0 0 1 60 112 Z" fill="var(--tan)"/>
+        <text x="32" y="64" font-size="10" font-weight="700" text-anchor="middle" fill="#fff">VEG</text><text x="84" y="44" font-size="9" font-weight="700" text-anchor="middle" fill="#fff">PROTEIN</text><text x="84" y="84" font-size="9" font-weight="700" text-anchor="middle" fill="#1a1a1b">CARBS</text></svg>
+        <ul class="plate-list"><li><strong>Veggies:</strong> ${veg}</li><li><strong>Protein:</strong> ${prot}</li><li><strong>Carbs:</strong> ${carb}</li><li><strong>Fat:</strong> ${fat}</li></ul></div>
+      ${d.type !== 'rest' && d.style !== 'keto' ? '<p class="hint" style="margin:6px 0 0">Training day: add 1 more cupped hand of carbs to the meal after you train.</p>' : ''}
+      ${extra ? `<p class="hint" style="margin:4px 0 0"><strong>From your coach:</strong> ${extra > 0 ? 'add' : 'drop'} ${Math.abs(extra)} cupped hand${Math.abs(extra) > 1 ? 's' : ''} of carbs a day.</p>` : ''}
+      ${d.style !== 'standard' ? `<p class="hint" style="margin:4px 0 0"><strong>${esc(sd.n)}:</strong> ${esc(sd.note || '')}</p>` : ''}
+      <p class="hint" style="margin:4px 0 0">Ideas: ${esc(ideas('protein'))} · ${esc(ideas('carb'))} · ${esc(ideas('fat'))}</p>
+      <div class="plate-meals">${Array.from({ length: M }, (_, i) => `<button class="plate-meal ${plates.includes(i) ? 'on' : ''}" data-action="nut-plate" data-i="${i}" aria-pressed="${plates.includes(i)}"><span>Meal ${i + 1}</span><strong>${plates.includes(i) ? '✓ Built' : 'Tap when built'}</strong></button>`).join('')}</div>
+      <p class="hint" style="margin:8px 0 0"><strong>Plate method</strong> · ${plates.length}/${M} plates today${p.flagged ? ' · <strong>coach review</strong>' : ''}</p></div>`;
+    if (items.length) h += `<div class="card"><div class="card-head"><h2>Logged</h2></div><ul class="list">${items.map((f) => `<li><div class="grow" data-action="edit-food" data-id="${f.id}" style="cursor:pointer"><div class="title">${esc(f.name)}</div><div class="meta">${esc(f.meal || '')}</div></div><button class="del" data-action="del-food" data-id="${f.id}" aria-label="Delete">×</button></li>`).join('')}</ul></div>`;
+    return h;
+  }
   function foodCard(dateIso, items) {
     if (!active()) {
       return `<div class="card" style="border-color:var(--accent)"><div class="row" style="flex-wrap:nowrap"><div style="flex:1"><strong>Get your nutrition plan</strong>
@@ -265,6 +431,7 @@
         <button class="btn block" data-action="nut-browse" style="margin-bottom:14px">📖 Recipes & saved meals</button>`;
     }
     const d = dayInfo(dateIso), st = S(), p = d.p, t = d.targets;
+    if (d.method === 'plate') return plateCard(d, dateIso, items);
     const sum = (k) => items.reduce((a, f) => a + (f[k] || 0), 0);
     const got = { kcal: sum('kcal'), p: sum('protein'), c: sum('carbs'), f: sum('fat') };
     const bar = (label, v, goal, unit) => `<div class="mbar"><div class="row" style="justify-content:space-between"><span>${label}</span><span class="sub">${Math.round(v)} / ${goal}${unit}</span></div><div class="progress ${v > goal * 1.08 ? 'over' : ''}"><i style="width:${Math.min(100, (v / (goal || 1)) * 100)}%"></i></div></div>`;
@@ -272,17 +439,19 @@
       <div class="chips-row">${Object.entries(TRAIN).map(([k, v]) => `<button class="chip-btn ${d.type === k ? 'on' : ''}" data-action="nut-type" data-type="${k}" title="${esc(TRAIN_HELP[k])}">${v[1]}</button>`).join('')}</div>
       ${d.type !== 'rest' ? `<div class="row" style="margin:8px 0 0;flex-wrap:nowrap"><span class="sub" style="flex:none">Training</span><select class="small-select" data-nut-after>${Array.from({ length: p.meals + 1 }, (_, i) => `<option value="${i}" ${d.after === i ? 'selected' : ''}>${i === 0 ? 'first thing' : 'after meal ' + i}</option>`).join('')}</select></div>` : ''}
       ${d.override ? `<button class="link-btn" data-action="nut-reset-day" style="font-size:13px">Reset to my usual ${DAYS[new Date(...dateIso.split('-').map((x, i) => (i === 1 ? x - 1 : +x))).getDay()]}</button>` : ''}
-      <div style="margin-top:12px">${bar('Calories', got.kcal, t.kcal, '')}${bar('Protein', got.p, t.protein, ' g')}${bar('Carbs', got.c, t.carbs, ' g')}${bar('Fat', got.f, t.fat, ' g')}</div>
+      ${windowHTML(st.nutrition, dateIso)}
+      <div style="margin-top:12px">${bar('Calories', got.kcal, t.kcal, '')}${bar('Protein', got.p, t.protein, ' g')}${d.method === 'calpro' ? '' : bar('Carbs', got.c, t.carbs, ' g') + bar('Fat', got.f, t.fat, ' g')}</div>
       <button class="btn small block" data-action="nut-browse" style="margin-top:10px">📖 Browse recipes & saved meals</button>
-      <p class="hint" style="margin:8px 0 0">${GOALS[p.goal]}${p.goal !== 'maintain' ? ' · ' + p.pace : ''}${st.nutrition.coach && (st.nutrition.coach.kcalAdjust || st.nutrition.coach.protein) ? ' · adjusted by your coach' : ''}${p.flagged ? ' · <strong>coach review</strong>' : ''}</p>
+      <p class="hint" style="margin:8px 0 0"><strong>${esc(METHODS[d.method].n)}</strong>${d.style !== 'standard' ? ' · ' + esc(STYLES[d.style].n) : ''} · ${GOALS[p.goal]}${p.goal !== 'maintain' ? ' · ' + p.pace : ''}${st.nutrition.coach && (st.nutrition.coach.kcalAdjust || st.nutrition.coach.protein) ? ' · adjusted by your coach' : ''}${p.flagged ? ' · <strong>coach review</strong>' : ''}</p>
       <p class="hint" style="margin:2px 0 0">Based on ${(() => { const w = weightInfo(st.body, st.settings.units); const kg = st.settings.units === 'kg'; const v = (lb) => (kg ? (lb * 0.45359237).toFixed(1) + ' kg' : lb.toFixed(1) + ' lb');
         return w ? `${w.n > 1 ? `your 7-day average weight, ${v(w.lb)}` : `your last weigh-in, ${v(w.lb)}`}` : `${v(d.bw)}`; })()}${d.bf ? ` · ${d.bf}% body fat` : ''}. Updates as you log weigh-ins.</p></div>`;
     const picksFor = (m, i) => {
-      const prefs = p.prefs || DEFAULT_PREFS;
+      const prefs = prefsFor(p, d.style);
       const rot = (arr, off) => arr[(i + off + ((C.ui.nutSwap || {})[m.key] || 0)) % arr.length];
-      if (m.role === 'shake') return { protein: 'whey', carb: 'banana', carbCap: 25, carb2: (p.prefs && p.prefs.shakeCarb) || 'carbpowder', fat: null };
+      if (m.role === 'shake') return { protein: styleOK(d.style, 'whey') ? 'whey' : 'peaprotein', carb: styleOK(d.style, 'banana') ? 'banana' : prefs.carb[0], carbCap: 25, carb2: d.style === 'keto' ? null : (p.prefs && p.prefs.shakeCarb) || (styleOK(d.style, 'carbpowder') ? 'carbpowder' : null), fat: null };
       const carbs = m.role === 'pre' || m.role === 'post' ? (prefs.carb.filter((k) => ['rice', 'potato', 'oats', 'pasta', 'bread', 'banana', 'oj', 'sweetpot', 'quinoa', 'berries'].includes(k))) : prefs.carb;
-      return { protein: rot(prefs.protein, 0), carb: rot(carbs.length ? carbs : prefs.carb, 1), fat: m.role === 'pre' || m.role === 'post' ? null : rot(prefs.fat, 2) };
+      const oil = ['olive', 'butter', 'coconut'].find((k) => styleOK(d.style, k));
+      return { protein: rot(prefs.protein, 0), carb: rot(carbs.length ? carbs : prefs.carb, 1), fat: m.role === 'pre' || m.role === 'post' ? null : rot(prefs.fat, 2), fat2: oil };
     };
     d.meals.forEach((m, i) => {
       const logged = items.filter((f) => f.meal === m.label);
@@ -312,6 +481,13 @@
   // ---------- actions ----------
   const actions = {
     'nut-setup': () => setupForm(),
+    'nut-plate': (el) => {
+      const n = S().nutrition, iso = C.ui.foodDate || C.todayISO(), i = +el.dataset.i;
+      n.plates = n.plates || {}; const a = n.plates[iso] || (n.plates[iso] = []);
+      const k = a.indexOf(i); if (k >= 0) a.splice(k, 1); else a.push(i);
+      Object.keys(n.plates).forEach((d) => { if (C.daysBetween && C.daysBetween(d, C.todayISO()) > 60) delete n.plates[d]; });
+      C.save(); C.render();
+    },
     'nut-type': (el) => { const st = S(); const n = st.nutrition; const iso = C.ui.foodDate; n.overrides = n.overrides || {}; n.overrides[iso] = { ...(n.overrides[iso] || {}), type: el.dataset.type }; C.save(); C.render(); },
     'nut-reset-day': () => { const n = S().nutrition; delete (n.overrides || {})[C.ui.foodDate]; C.save(); C.render(); },
     'nut-choose': (el) => chooseMeal(el.dataset.key),
@@ -367,7 +543,8 @@
       <div id="lib-list"></div>`, null, { hideSave: true });
     const draw = () => {
       const want = ROLE_TAGS[m.role] || [];
-      let items = libraryItems().filter((x) => tab === 'all' || x.src === tab)
+      const style = styleOf(S().nutrition);
+      let items = libraryItems().filter((x) => tab === 'all' || x.src === tab).filter((x) => x.src === 'mine' || recipeFits(x.recipe, style))
         .filter((x) => !q || (x.name + ' ' + x.tags.join(' ')).toLowerCase().includes(q));
       items = items.map((x) => {
         const s = suggestServings(x, m); const v = scaled(x.per, s);
@@ -509,8 +686,11 @@
       else if (actual > target * 2) { status = 'fast'; change = -clamp(r50((actual - target) * 500), 100, 250); why = 'Gaining faster than planned (likely extra fat)'; }
     } else if (Math.abs(actual) > Math.max(0.5, bw * 0.003)) { status = actual > 0 ? 'fast' : 'slow'; change = -clamp(r50(actual * 500), -250, 250); if (Math.abs(change) < 100) change = Math.sign(change) * 100; why = actual > 0 ? 'Drifting up' : 'Drifting down'; }
     const unitW = (lb) => (units === 'kg' ? f1(lb * 0.45359237) + ' kg' : f1(lb) + ' lb');
-    const text = `${unitW(actual)}/week vs goal ${p.goal === 'maintain' ? 'steady' : unitW(target) + '/week'}.` + (status === 'ok' ? ' On track: keep everything the same.' : ` ${why}: ${change > 0 ? 'add' : 'take off'} ${Math.abs(change)} kcal a day, mostly ${change > 0 ? 'added to' : 'from'} carbs.`);
-    const lowLog = foodDays != null && foodDays < 4;
+    const meth = arguments[0].method || 'auto';
+    const text0 = `${unitW(actual)}/week vs goal ${p.goal === 'maintain' ? 'steady' : unitW(target) + '/week'}.` + (status === 'ok' ? ' On track: keep everything the same.' : ` ${why}: ${change > 0 ? 'add' : 'take off'} ${Math.abs(change)} kcal a day, mostly ${change > 0 ? 'added to' : 'from'} carbs.`);
+    let text = text0;
+    if (status !== 'ok' && meth === 'plate') { const n = Math.max(1, Math.round(Math.abs(change) / 100)); text = text0.replace(/: (add|take off) \d+ kcal a day, mostly (added to|from) carbs\./, `: ${change > 0 ? 'add' : 'drop'} ${n} cupped hand${n > 1 ? 's' : ''} of carbs a day.`); }
+    const lowLog = foodDays != null && foodDays < 4 && meth !== 'plate';
     return Object.assign(base, { status, actual, target, change, text, lowLog, newAdjust: base.kcalAdjust + change });
   }
 
@@ -521,7 +701,7 @@
       ctx.modalActions['lib-new'] = () => { C.ui.recipeReturn = true; C.closeModal(); setTimeout(() => Recipes.open(null), 0); };
       document.addEventListener('change', onChange);
     },
-    active, dayInfo, targetsFor, foodCard, slotsFor, setupForm, checkin, weightInfo,
+    active, dayInfo, targetsFor, foodCard, slotsFor, setupForm, checkin, weightInfo, METHODS, STYLES, methodOf, styleOf, recipeFits, prefsFor,
     _macros: macros, _layout: layout, _distribute: distribute, _amounts: amounts, FOODS, TRAIN,
   };
 })();

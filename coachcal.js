@@ -74,7 +74,7 @@
     const t = C.todayISO(), rev = ((C.getState().settings || {}).nutReviewed || {})[x.c.client_id];
     const tc = x.targets && x.targets.checkin;
     const since = [n.profile.updated, rev, tc].filter(Boolean).sort().pop();
-    return Nutrition.checkin({ profile: n.profile, coach: { kcalAdjust: x.targets && x.targets.kcalAdjust != null ? x.targets.kcalAdjust : (n.coach || {}).kcalAdjust },
+    return Nutrition.checkin({ method: (x.targets && x.targets.nMethod) || (Nutrition.methodOf ? Nutrition.methodOf(n) : 'auto'), profile: n.profile, coach: { kcalAdjust: x.targets && x.targets.kcalAdjust != null ? x.targets.kcalAdjust : (n.coach || {}).kcalAdjust },
       body: x.body, units: x.state.settings.units, since, today: t, foodDays: x.c.food_days_7d });
   }
   function checkinsCard() {
