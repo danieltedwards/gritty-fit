@@ -82,7 +82,7 @@
     const ys = points.map((p) => p.y);
     const min = Math.min(...ys), max = Math.max(...ys), rng = max - min || 1;
     const d = points.map((p, i) => `${i ? 'L' : 'M'}${((i / (points.length - 1)) * (w - 4) + 2).toFixed(1)},${(h - 3 - ((p.y - min) / rng) * (h - 6)).toFixed(1)}`).join('');
-    return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><path d="${d}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><path d="${d}" fill="none" stroke="var(--accent-2, var(--accent))" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   }
 
   window.Charts = { line, bars, ring, spark, shortDate };

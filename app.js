@@ -21,7 +21,7 @@
   const relDay = (iso) => { const diff = daysBetween(iso, todayISO()); return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : prettyDate(iso); };
   const byDateDesc = (a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || ''));
 
-  const APP_VERSION = '2026.11.20-c';
+  const APP_VERSION = '2026.11.20-d';
   // ---------- state ----------
   const DEFAULT_STATE = () => ({
     version: 1,
@@ -138,7 +138,8 @@
       },
     };
   })();
-  const modalActions = {};
+  const modalActions = {
+    'ql-go': (b) => { modal.close(); const fn = actions[b.dataset.go]; if (fn) setTimeout(() => fn(b), 0); },};
 
   const field = (label, input, hint = '') => `<label class="field"><span>${label}</span>${input}</label>${hint ? `<p class="hint">${hint}</p>` : ''}`;
   const inNum = (name, val, attrs = '') => `<input type="number" inputmode="decimal" step="any" name="${name}" value="${val ?? ''}" ${attrs}>`;
@@ -262,27 +263,116 @@
     const st = S.settings;
     const eaten = sumKcal(foodOn(t)), protein = sumProtein(foodOn(t));
     const calT = kcalTarget(t);
+    const nT = window.Nutrition && Nutrition.targetsFor ? Nutrition.targetsFor(t) : null;
+    const protT = nT ? nT.protein : st.proteinTarget;
     const ws = weekStart(t);
     const weekW = workoutsInWeek(ws);
     const wDays = new Set(weekW.map((w) => w.date));
     const latest = latestWith('weight');
     const weights = bodySorted().filter((b) => b.weight != null).map((b) => ({ x: b.date, y: b.weight }));
-    const monthAgo = weights.filter((p) => p.x <= addDays(t, -28)).pop() || weights[0];
-    const change = latest && monthAgo && monthAgo.x !== latest.date ? round1(latest.weight - monthAgo.y) : null;
+    const weekAgo = weights.filter((p) => p.x <= addDays(t, -7)).pop();
+    const wChange = latest && weekAgo ? round1(latest.weight - weekAgo.y) : null;
     const habits = activeHabits();
-    const doneCount = habits.filter((h) => habitDone(t, h.id)).length;
-    const journaled = S.journal.some((j) => j.date === t);
-    const activeGoals = S.goals.filter((g) => !g.done);
+    const doneHabits = habits.filter((h) => habitDone(t, h.id));
     const strk = streak(dayHasActivity);
     const hour = new Date().getHours();
-    const greet = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+    const trainedToday = S.workouts.some((w) => w.date === t);
+    const planned = window.Training && Training.plannedOn ? Training.plannedOn(t) : [];
+    const sent = window.Assign ? Assign.pendingOn(t) : [];
+    const nut = window.Nutrition && Nutrition.active && Nutrition.active() ? Nutrition.dayInfo(t) : null;
+
+    // ---- today's score: train + fuel + habits ----
+    const trainPart = trainedToday || (!planned.length && !sent.length) ? 1 : 0;
+    const fuelPart = nut && ['plate', 'meal', 'zone'].includes(nut.method) ? Math.min(1, ((S.nutrition.plates || {})[t] || Object.keys(((S.nutrition.mpTicks || {})[t]) || {}) || ((S.nutrition.zoneTicks || {})[t]) || []).length / Math.max(1, nut.p.meals || 4))
+      : calT ? Math.min(1, eaten / calT) : 0;
+    const habitPart = habits.length ? doneHabits.length / habits.length : 1;
+    const score = Math.round(((trainPart + fuelPart + habitPart) / 3) * 100);
+    const ring = (r, frac, color, w) => { const c = 2 * Math.PI * r; return `<circle cx="48" cy="48" r="${r}" fill="none" stroke="var(--ring-track)" stroke-width="${w}"/>${frac > 0.01 ? '' : '<!--'}<circle class="ring-fill" cx="48" cy="48" r="${r}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="round" transform="rotate(-90 48 48)" style="--len:${(frac * c).toFixed(1)};--full:${c.toFixed(1)}" stroke-dasharray="${(frac * c).toFixed(1)} ${c.toFixed(1)}"/>${frac > 0.01 ? '' : '-->'}`; };
+
+    // ---- brief items ----
+    const items = [];
+    const ico = (path) => `<span class="bi-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${path}</svg></span>`;
+    const I_TRAIN = '<path d="M6 7v10M18 7v10M3 10v4M21 10v4M6 12h12"/>', I_FOOD = '<path d="M7 3v8a3 3 0 0 0 6 0V3M10 3v18M17 3c-2 2-2 6 0 8v10"/>', I_CHECK = '<path d="M5 12l5 5 9-10"/>', I_SCALE = '<path d="M4 20h16M6 20l2-12h8l2 12M12 8V4"/>';
+    if (S.activeSession) items.push(`<button class="brief-item hero" data-action="session-open">${ico(I_TRAIN)}<span class="bi-txt"><strong>Workout in progress</strong><span>${esc(S.activeSession.dayName || '')}</span></span><span class="bi-go">RESUME</span></button>`);
+    else if (sent.length) items.push(`<button class="brief-item hero" data-action="assign-start" data-id="${sent[0].id}">${ico(I_TRAIN)}<span class="bi-txt"><strong>${esc(sent[0].title)}</strong><span>From your coach${sent[0].note ? ' · ' + esc(sent[0].note) : ''}</span></span><span class="bi-go">START</span></button>`);
+    else if (trainedToday) { const w = S.workouts.filter((x) => x.date === t).slice(-1)[0]; items.push(`<button class="brief-item done" data-action="goto" data-tab="train">${ico(I_CHECK)}<span class="bi-txt"><strong>Trained today</strong><span>${esc(w.type || 'Workout')}${w.minutes ? ' · ' + w.minutes + ' min' : ''}</span></span></button>`); }
+    else if (planned.length) {
+      const x = planned[0], names = x.day.blocks.flatMap((b) => b.exercises.map((e) => e.name));
+      items.push(`<button class="brief-item hero" data-action="session-start" data-day="${x.day.id}" data-plan="${esc(x.plan.id)}">${ico(I_TRAIN)}<span class="bi-txt"><strong>${esc(x.day.label)} · ${esc(x.day.name)}</strong><span>${esc(names.slice(0, 3).join(' · '))}${names.length > 3 ? ' +' + (names.length - 3) : ''}</span></span><span class="bi-go">START</span></button>`);
+    } else items.push(`<button class="brief-item" data-action="add-workout">${ico(I_TRAIN)}<span class="bi-txt"><strong>Rest day</strong><span>Moved anyway? Log it.</span></span><span class="bi-go ghost">LOG</span></button>`);
+    if (nut && nut.method === 'meal') items.push(`<button class="brief-item" data-action="goto" data-tab="food">${ico(I_FOOD)}<span class="bi-txt"><strong>Meal plan</strong><span>Tick off your meals</span></span><span class="bi-go ghost">OPEN</span></button>`);
+    else if (nut && (nut.method === 'plate' || nut.method === 'zone')) items.push(`<button class="brief-item" data-action="goto" data-tab="food">${ico(I_FOOD)}<span class="bi-txt"><strong>${nut.method === 'plate' ? 'Build your plates' : 'Zone blocks'}</strong><span>Tap each meal when it's done</span></span><span class="bi-go ghost">OPEN</span></button>`);
+    else if (calT) {
+      const nextMeal = nut ? nut.meals.find((m) => !foodOn(t).some((f) => f.meal === m.label)) : null;
+      const left = Math.max(0, Math.round(calT - eaten)), pLeft = protT ? Math.max(0, Math.round(protT - protein)) : null;
+      items.push(`<button class="brief-item ${eaten >= calT * 0.95 ? 'done' : ''}" data-action="goto" data-tab="food">${ico(I_FOOD)}<span class="bi-txt"><strong>${nextMeal ? esc(nextMeal.label) + ' next' : eaten ? `${fmt(left, 0)} kcal left` : 'Log your first meal'}</strong><span>${fmt(left, 0)} kcal left${pLeft != null ? ` · ${pLeft} g protein to go` : ''}</span></span><span class="bi-go ghost">LOG</span></button>`);
+    }
+    if (!latest || daysBetween(latest.date, t) >= 3) items.push(`<button class="brief-item" data-action="add-body">${ico(I_SCALE)}<span class="bi-txt"><strong>Weigh in</strong><span>${latest ? `Last one ${relDay(latest.date).toLowerCase()}` : 'Your first weigh-in starts the trend'}</span></span><span class="bi-go ghost">LOG</span></button>`);
+    const left = 3 - [trainPart, fuelPart >= 0.95 ? 1 : 0, habitPart].filter((x) => x >= 1).length;
+    const goalW = st.goalWeight;
+    let goalLine = '';
+    if (latest && goalW != null) {
+      const togo = round1(Math.abs(latest.weight - goalW));
+      let pace = '';
+      const recent = weights.filter((p) => p.x >= addDays(t, -21));
+      if (recent.length >= 3) {
+        const days = Math.max(1, daysBetween(recent[0].x, recent[recent.length - 1].x)), perDay = (recent[recent.length - 1].y - recent[0].y) / days;
+        if (perDay && Math.sign(perDay) === Math.sign(goalW - latest.weight)) { const d = Math.round(togo / Math.abs(perDay)); if (d < 400) pace = ` · on pace for ${prettyDate(addDays(t, d), { month: 'short', day: 'numeric' })}`; }
+      }
+      goalLine = togo < 0.5 ? 'At your goal weight. Hold the line.' : `${togo} ${wUnit()} to your ${fmt(goalW)} goal${pace}`;
+    }
+    const coachMsg = window.Chat && Chat.latest ? Chat.latest() : null;
 
     let h = window.Cloud ? Cloud.todayCards() : '';
-    h += `<p class="sub" style="margin:0 0 14px">${greet}${st.name ? ', ' + esc(st.name) : ''}. ${strk ? `<strong>${strk}-day</strong> logging streak — keep it alive.` : 'Log anything today to start a streak.'}</p>`;
+    h += `<section class="brief card">
+      <div class="brief-top"><svg class="score-ring" width="96" height="96" viewBox="0 0 96 96" role="img" aria-label="Today's score ${score}">
+        ${ring(40, trainPart, 'var(--accent-2)', 9)}${ring(30, fuelPart, 'var(--gold)', 8)}${ring(20, habitPart, 'var(--text)', 7)}
+        <text x="48" y="55" text-anchor="middle" class="score-num">${score}</text></svg>
+        <div class="brief-head"><div class="eyebrow gold">Daily brief</div>
+          <div class="brief-title">${left <= 0 ? '100 today. That\'s the standard.' : `${left} thing${left > 1 ? 's' : ''} left and you hit 100`}</div>
+          ${goalLine ? `<div class="sub">${esc(goalLine)}</div>` : `<div class="sub"><button class="link-btn" data-action="goto" data-tab="body">Set a goal weight</button></div>`}
+          <div class="brief-key"><span><i style="background:var(--accent-2)"></i>Train</span><span><i style="background:var(--gold)"></i>Fuel</span><span><i style="background:var(--text)"></i>Habits</span></div></div></div>
+      ${items.join('')}
+      ${habits.length ? `<div class="brief-habits">${habits.map((hb) => `<button class="hchip ${habitDone(t, hb.id) ? 'on' : ''}" data-action="toggle-habit" data-id="${hb.id}" aria-pressed="${habitDone(t, hb.id)}">${habitDone(t, hb.id) ? '✓ ' : ''}${esc(hb.name)}</button>`).join('')}</div>` : ''}
+      ${coachMsg ? `<button class="brief-coach" data-action="chat-open"><span class="bc-av">${esc((coachMsg.name || 'C').charAt(0).toUpperCase())}</span><span><strong>${esc(coachMsg.name || 'Coach')}:</strong> ${esc(String(coachMsg.body || '').slice(0, 120))}</span></button>` : ''}
+    </section>`;
 
-    h += `<div class="quick-row"><button class="btn primary" data-action="add-food">+ Food</button><button class="btn primary" data-action="add-workout">+ Workout</button><button class="btn primary" data-action="add-body">+ Weight</button></div>`;
     if (window.Assign) h += Assign.card();
-    h += Training.todayCard();
+    // ---- the hub ----
+    const progs = window.Training && Training.progs ? Training.progs() : [];
+    const pl = progs[0] && Training.planNow ? Training.planNow(progs[0].planId) : null;
+    const bests = liftBests(); let prMonth = 0; bests.forEach((b) => { if (b.date >= addDays(t, -30) && b.sessions > 1) prMonth++; });
+    const jStreak = streak((d) => S.journal.some((j) => j.date === d));
+    const lastJ = S.journal.slice().sort((a, b) => b.date.localeCompare(a.date))[0];
+    const tile = (cls, act, inner, extra = '') => `<button class="tile ${cls}" ${act} ${extra}>${inner}</button>`;
+    h += `<div class="hub-head"><span>Your hub</span></div><section class="hub">`;
+    h += tile('wide', 'data-action="goto" data-tab="train"', `<span class="tile-bg" aria-hidden="true">W${pl && progs[0] ? (Training.programWeek(progs[0], pl).week || 1) : ''}</span>
+      <span class="tile-t">${svgI(I_TRAIN)}Train</span>
+      <span class="tile-s">${pl ? esc(pl.name) + ' · ' : ''}${wDays.size} of ${st.workoutsPerWeek} this week${prMonth ? ` · ${prMonth} PR${prMonth > 1 ? 's' : ''} this month` : ''}</span>
+      <span class="wk-strip">${[0, 1, 2, 3, 4, 5, 6].map((i) => { const d = addDays(ws, i); return `<i class="${wDays.has(d) ? 'on' : ''} ${d === t ? 'today' : ''}"></i>`; }).join('')}</span>`);
+    h += tile('', 'data-action="goto" data-tab="food"', `<span class="tile-t">Food${svgI(I_FOOD, 'gold')}</span>
+      ${nut && ['plate', 'meal', 'zone'].includes(nut.method) ? `<span class="tile-n">${Math.round(fuelPart * 100)}<small>%</small></span>` : `<span class="tile-n">${fmt(eaten, 0)}<small> / ${fmt(calT, 0)}</small></span>`}
+      <span class="bar"><i style="width:${Math.min(100, fuelPart * 100)}%;background:var(--gold)"></i></span>`);
+    h += tile('', 'data-action="goto" data-tab="body"', `<span class="tile-t">Body${svgI('<path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/>', 'gold')}</span>
+      ${latest ? `<span class="tile-n">${fmt(latest.weight)}${wChange != null && wChange !== 0 ? ` <small class="${wChange < 0 ? 'down' : 'up'}">${wChange < 0 ? '▼' : '▲'}${Math.abs(wChange)}</small>` : ''}</span>${weights.length > 2 ? Charts.spark(weights.slice(-14)) : '<span class="tile-s">Keep weighing in</span>'}` : '<span class="tile-s">No weigh-ins yet</span>'}`);
+    h += tile('', 'data-action="goto" data-tab="journal" data-seg="habits"', `<span class="tile-t">Habits</span>
+      <span class="hsq">${habits.slice(0, 6).map((hb) => `<i class="${habitDone(t, hb.id) ? 'on' : ''}"></i>`).join('') || '<span class="tile-s">Add your daily habits</span>'}</span>
+      <span class="tile-s">${habits.length ? `${doneHabits.length} of ${habits.length} today` : ''}</span>`);
+    h += tile('', 'data-action="goto" data-tab="journal" data-seg="journal"', `<span class="tile-t">Goals</span>
+      <span class="tile-m">${jStreak ? `Journal · ${jStreak}-day streak` : `${S.goals.filter((g) => !g.done).length} active goal${S.goals.filter((g) => !g.done).length === 1 ? '' : 's'}`}</span>
+      <span class="tile-s">${lastJ && (lastJ.text || lastJ.wins) ? '“' + esc(String(lastJ.wins || lastJ.text).slice(0, 40)) + '”' : 'Write today\'s check-in'}</span>`);
+    const coachTile = window.Cloud && Cloud.user ? (Cloud.profile && Cloud.profile.role === 'coach'
+      ? tile('gold', 'data-action="goto" data-tab="coach"', '<span class="tile-t">Coach</span><span class="tile-m">Dashboard</span><span class="tile-s">Clients, plans, check-ins</span>')
+      : Cloud.coach ? tile('gold', 'data-action="chat-open"', `<span class="tile-t">Coach${window.Chat && Chat.totalUnread && Chat.totalUnread() ? `<span class="tile-badge">${Chat.totalUnread()}</span>` : ''}</span><span class="tile-m">Chat with ${esc((Cloud.coach.full_name || 'your coach').split(' ')[0])}</span><span class="tile-s">Messages, notes, check-ins</span>`) : '') : '';
+    h += coachTile || tile('', 'data-action="goto" data-tab="body" data-seg="photos"', '<span class="tile-t">Photos</span><span class="tile-m">Progress photos</span><span class="tile-s">Your before and after</span>');
+    if (coachTile) h += tile('', 'data-action="goto" data-tab="body" data-seg="photos"', '<span class="tile-t">Photos</span><span class="tile-m">Progress photos</span><span class="tile-s">Your before and after</span>');
+    h += `</section><section class="hub-mini">
+      ${tile('mini', 'data-action="goto" data-tab="exercises"', `${svgI('<path d="M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2zM8 7h7M8 11h7"/>', 'gold')}Exercises`)}
+      ${tile('mini', 'data-action="nut-browse"', `${svgI('<path d="M3 12h18M5 12a7 7 0 0 0 14 0M12 5v2M8 6l1 2M16 6l-1 2"/>', 'gold')}Recipes`)}
+      ${tile('mini', 'data-action="goto" data-tab="train"', `${svgI('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>', 'gold')}Calendar`)}
+      ${tile('mini', 'data-action="goto" data-tab="journal" data-seg="review"', `${svgI('<path d="M7 4h10v3a5 5 0 0 1-10 0zM5 5h2v2a2 2 0 0 1-2-2zM17 5h2a2 2 0 0 1-2 2zM10 13h4v3h3v3H7v-3h3z"/>', 'gold')}Review`)}
+    </section>`;
+
     const hd = S.health && (S.health[t] || S.health[addDays(t, -1)]);
     if (hd) {
       const isToday = !!S.health[t];
@@ -293,61 +383,15 @@
     }
     const records = S.food.length + S.workouts.length + S.body.length + S.journal.length;
     const sinceBackup = st.lastBackup ? daysBetween(st.lastBackup.slice(0, 10), t) : null;
-    if (records >= 15 && (sinceBackup == null || sinceBackup >= 14)) {
+    if (records >= 15 && (sinceBackup == null || sinceBackup >= 14) && !(window.Cloud && Cloud.user)) {
       h += `<div class="card" style="border-color:var(--accent)"><div class="row" style="flex-wrap:nowrap"><div style="flex:1"><strong>Back up your data</strong>
         <div class="sub">${sinceBackup == null ? 'You haven\'t made a backup yet.' : `Last backup was ${sinceBackup} days ago.`} It only lives on this phone.</div></div>
         <button class="btn small primary" data-action="backup-now">Back up</button></div></div>`;
     }
-    h += `<div class="card"><div class="card-head"><h2>Daily accountability</h2><span class="sub">${doneCount}/${habits.length}</span></div>`;
-    h += habits.length ? habits.map((hb) => {
-      const s = streak((d) => habitDone(d, hb.id));
-      return `<button class="habit ${habitDone(t, hb.id) ? 'done' : ''}" data-action="toggle-habit" data-id="${hb.id}">
-        <span class="box"></span><span>${esc(hb.name)}</span><span class="streak">${s ? '🔥 ' + s : ''}</span></button>`;
-    }).join('') : `<div class="empty">No daily habits yet.</div>`;
-    h += `<button class="btn small" data-action="goto" data-tab="journal" data-seg="habits">Edit habits</button></div>`;
-
-    h += `<div class="grid-2">`;
-    h += `<div class="card" data-action="goto" data-tab="food" style="cursor:pointer"><div class="card-head"><h2>Calories</h2></div>
-      <div class="big">${fmt(eaten, 0)}<small> / ${fmt(calT, 0)}</small></div>
-      <div class="progress ${eaten > calT ? 'over' : ''}"><i style="width:${Math.min(100, (eaten / (calT || 1)) * 100)}%"></i></div>
-      <div class="sub">${eaten <= calT ? fmt(calT - eaten, 0) + ' left' : fmt(eaten - calT, 0) + ' over'} · ${fmt(protein, 0)}g protein</div></div>`;
-    h += `<div class="card" data-action="goto" data-tab="train" style="cursor:pointer"><div class="card-head"><h2>Workouts</h2></div>
-      <div class="big">${wDays.size}<small> / ${st.workoutsPerWeek} this week</small></div>
-      <div class="week">${[0, 1, 2, 3, 4, 5, 6].map((i) => { const d = addDays(ws, i); return `<div class="${wDays.has(d) ? 'on' : ''} ${d === t ? 'today' : ''}"><i></i>${'MTWTFSS'[i]}</div>`; }).join('')}</div></div>`;
-    h += `</div>`;
-
-    h += `<div class="card" data-action="goto" data-tab="body" style="cursor:pointer"><div class="card-head"><h2>Weight</h2><span class="sub">${latest ? relDay(latest.date) : ''}</span></div>`;
-    if (latest) {
-      const toGoal = st.goalWeight != null ? round1(latest.weight - st.goalWeight) : null;
-      h += `<div class="row" style="justify-content:space-between;align-items:flex-end"><div><div class="big">${fmt(latest.weight)}<small> ${wUnit()}</small></div>
-        <div class="sub">${change != null ? `<span class="${change > 0 ? 'up' : change < 0 ? 'down' : ''}">${change > 0 ? '+' : ''}${change} ${wUnit()}</span> vs ${relDay(monthAgo.x)}` : 'First weigh-in logged'}
-        ${toGoal != null ? ` · ${Math.abs(toGoal)} ${wUnit()} ${toGoal > 0 ? 'to goal' : toGoal < 0 ? 'past goal' : '— at goal!'}` : ''}</div></div>
-        ${Charts.spark(weights.slice(-20))}</div>`;
-      const lb = latestWith('bodyFat');
-      if (lb) h += `<div class="sub" style="margin-top:6px">Body fat ${fmt(lb.bodyFat)}%${latestWith('muscle') ? ` · Muscle ${fmt(latestWith('muscle').muscle)} ${wUnit()}` : ''}</div>`;
-    } else h += `<div class="empty">No weigh-ins yet.</div>`;
-    h += `</div>`;
-
-    const wk = weekStats(ws);
-    if (wk.score != null) {
-      h += `<div class="card" data-action="goto" data-tab="journal" data-seg="review" style="cursor:pointer"><div class="card-head"><h2>Week so far</h2><span class="sub">Review ›</span></div>
-        <div class="row" style="flex-wrap:nowrap"><div class="big ${wk.score >= 80 ? 'good' : wk.score < 50 ? 'bad' : ''}">${wk.score}<small>%</small></div>
-        <div class="sub" style="flex:1">Accountability score: calories on target, workouts, habits and journal for the days so far.</div></div></div>`;
-    }
-    h += `<div class="card"><div class="card-head"><h2>Goals</h2><button class="btn small" data-action="goto" data-tab="journal" data-seg="goals">All</button></div>`;
-    h += activeGoals.length ? `<ul class="list">${activeGoals.slice(0, 4).map((g) => {
-      const left = g.targetDate ? daysBetween(t, g.targetDate) : null;
-      return `<li><div class="grow"><div class="title">${esc(g.title)}</div>${g.why ? `<div class="meta">${esc(g.why)}</div>` : ''}</div>
-        ${left != null ? `<span class="num ${left < 0 ? 'bad' : ''}">${left < 0 ? Math.abs(left) + 'd late' : left + 'd left'}</span>` : ''}</li>`;
-    }).join('')}</ul>` : `<div class="empty">Set a goal to hold yourself to.</div>`;
-    h += `</div>`;
-
-    h += `<div class="card"><div class="card-head"><h2>Journal</h2></div>
-      ${journaled ? `<p class="sub" style="margin:0 0 10px">✓ Today's check-in is written.</p>` : `<p class="sub" style="margin:0 0 10px">How did today go? Two minutes, be honest.</p>`}
-      <button class="btn ${journaled ? '' : 'primary'} block" data-action="journal-today">${journaled ? 'View / edit today' : 'Write today\'s check-in'}</button></div>`;
-
+    ui.homeStreak = strk;
     return h;
   };
+  const svgI = (path, cls = '') => `<svg class="ti ${cls}" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
 
   // ---------- calendar (Food + Train): day / week / month, tap a day to see it ----------
   const DOW = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
@@ -1071,6 +1115,7 @@
     const st = S.settings;
     openModal(`<h2>Settings</h2>
       ${field('Your name', inText('name', st.name, 'placeholder="Optional"'))}
+      ${field('Appearance', `<select name="theme"><option value="dark" ${(st.theme || 'dark') === 'dark' ? 'selected' : ''}>Dark</option><option value="light" ${st.theme === 'light' ? 'selected' : ''}>Light</option><option value="auto" ${st.theme === 'auto' ? 'selected' : ''}>Match my phone</option></select>`)}
       ${field('Units', `<select name="units"><option value="lb" ${st.units === 'lb' ? 'selected' : ''}>Pounds / inches</option><option value="kg" ${st.units === 'kg' ? 'selected' : ''}>Kilograms / cm</option></select>`, 'Switching converts everything you\'ve already logged.')}
       <div class="fields-2">${field('Daily calories', inNum('calorieTarget', st.calorieTarget, 'min="0" required'))}${field('Daily protein (g)', inNum('proteinTarget', st.proteinTarget, 'min="0"'))}</div>
       <p class="hint"><a href="#" data-modal-action="calc" style="color:var(--accent);font-weight:650">Calculate my targets</a> from height, age, weight and activity.</p>
@@ -1089,8 +1134,9 @@
       if (newUnits !== st.units) convertUnits(st.units, newUnits);
       Object.assign(st, {
         name: fd.get('name').trim(), units: newUnits, calorieTarget: num(fd.get('calorieTarget')) || 0, proteinTarget: num(fd.get('proteinTarget')) || 0,
-        workoutsPerWeek: num(fd.get('workoutsPerWeek')) ?? 0, goalWeight: num(fd.get('goalWeight')),
+        workoutsPerWeek: num(fd.get('workoutsPerWeek')) ?? 0, goalWeight: num(fd.get('goalWeight')), theme: fd.get('theme') || 'dark',
       });
+      applyTheme();
       // goal weight was entered in the new unit already, nothing else to do
       save(); toast('Settings saved');
     });
@@ -1324,6 +1370,17 @@
   const find = (list, id) => S[list].find((x) => x.id === id);
   const actions = {
     'open-settings': settingsForm,
+    'quick-log': () => {
+      const t = todayISO(), planned = window.Training && Training.plannedOn ? Training.plannedOn(t) : [];
+      const b = (act, ico, label, sub, extra = '') => `<button class="ql-btn" data-modal-action="ql-go" data-go="${act}" ${extra}><span class="ql-ico">${ico}</span><span><strong>${label}</strong><span>${sub}</span></span></button>`;
+      openModal(`<h2>Log something</h2><div class="ql-grid">
+        ${S.activeSession ? b('session-open', '🏋️', 'Resume workout', esc(S.activeSession.dayName || '')) : planned.length ? b('session-start', '🏋️', 'Start today\'s workout', esc(planned[0].day.label + ' · ' + planned[0].day.name), `data-day="${planned[0].day.id}" data-plan="${esc(planned[0].plan.id)}"`) : ''}
+        ${b('add-food', '🍽', 'Food', 'Search, scan or quick add')}
+        ${b('add-workout', '💪', 'Workout', 'Any session or cardio')}
+        ${b('add-body', '⚖️', 'Weigh-in', 'Weight, body fat, tape')}
+        ${b('add-photo', '📷', 'Progress photo', 'Private to you')}
+        ${b('journal-today', '📓', 'Journal', 'Two honest minutes')}</div>`, null, { hideSave: true });
+    },
     goto: (el) => { if (el.dataset.seg) { if (el.dataset.tab === 'body') ui.bodySeg = el.dataset.seg; else { ui.goalSeg = el.dataset.seg; ui.reviewWeek = null; } } setTab(el.dataset.tab); },
     'toggle-habit': (el) => {
       const t = todayISO(), list = S.habitLog[t] || (S.habitLog[t] = []);
@@ -1439,7 +1496,7 @@
 
   // ---------- render ----------
   const TITLES = { today: 'Today', food: 'Food', train: 'Training', body: 'Body', journal: 'Goals & Journal' };
-  const PARENT = {};
+  const PARENT = { journal: 'today' };
   function setTab(tab, opts) {
     if (!(opts && opts.fromPop) && tab !== ui.tab) Nav.push(tab);
     ui.tab = tab;
@@ -1448,9 +1505,20 @@
     render();
     window.scrollTo(0, 0);
   }
+  function applyTheme() {
+    const th = (S && S.settings && S.settings.theme) || 'dark';
+    if (document.documentElement.dataset.theme !== th) document.documentElement.dataset.theme = th;
+    try { localStorage.setItem('grit-theme', th); } catch (_) { /* ignore */ }
+    const light = th === 'light' || (th === 'auto' && window.matchMedia('(prefers-color-scheme: light)').matches);
+    const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = light ? '#ebe7da' : '#070806';
+  }
   function render() {
-    $('#view-title').textContent = TITLES[ui.tab];
+    applyTheme();
+    const hr = new Date().getHours();
+    const homeTitle = `${hr < 12 ? 'Morning' : hr < 18 ? 'Afternoon' : 'Evening'}${S.settings.name ? ', ' + S.settings.name.split(' ')[0] : ''}`;
+    $('#view-title').textContent = ui.tab === 'today' ? homeTitle : TITLES[ui.tab];
     $('#today-label').textContent = prettyDate(todayISO(), { weekday: 'long', month: 'long', day: 'numeric' });
+    document.body.dataset.tab = ui.tab;
     const navTab = PARENT[ui.tab] || ui.tab;
     document.querySelectorAll('.tabbar [data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === navTab));
     $('#back-btn').hidden = !PARENT[ui.tab];
@@ -1458,6 +1526,7 @@
     $('#back-btn').dataset.action = ui.tab === 'editor' ? 'ed-cancel' : ui.tab === 'chat' ? 'chat-back' : 'goto';
     $('#view').innerHTML = (ui.viewAs ? `<div class="viewas"><span>👀 Viewing <strong>${esc(ui.viewAs.name)}</strong> · read-only</span><button class="btn small" data-action="exit-view-as">Exit</button></div>` : '') + views[ui.tab]();
     document.body.classList.toggle('viewing-as', !!ui.viewAs);
+    const sc = $('#streak-chip'); if (sc) { const n = ui.tab === 'today' ? ui.homeStreak : 0; sc.hidden = !n; sc.querySelector('b').textContent = n || ''; }
     Training.afterRender(ui.tab);
     if (window.Chat) Chat.afterRender(ui.tab);
     if (window.Notify) Notify.afterRender(ui.tab);

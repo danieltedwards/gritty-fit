@@ -748,13 +748,37 @@
     C.setTab('train');
   }
 
+  // ---------- PR moment ----------
+  function prBurst(name, v, best) {
+    const old = document.getElementById('pr-burst'); if (old) old.remove();
+    const u = unit() || 'lb', up = v.weight > best.weight ? `Up ${Math.round((v.weight - best.weight) * 10) / 10} ${u} from your best` : `${v.reps - best.reps} more rep${v.reps - best.reps > 1 ? 's' : ''} than your best`;
+    const e1 = Math.round(v.weight * (1 + Math.min(v.reps, 12) / 30));
+    const el = document.createElement('div'); el.id = 'pr-burst'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'New personal record');
+    const canTell = window.Chat && Chat.post && window.Cloud && Cloud.coach;
+    el.innerHTML = `<div class="pr-card"><div class="pr-rays" aria-hidden="true"></div>
+      ${[18, 42, 66, 84].map((x, i) => `<span class="spark-dot" style="left:${x}%;bottom:${12 + (i % 2) * 14}px;animation-delay:${i * 0.25}s" aria-hidden="true"></span>`).join('')}
+      <div class="pr-tag"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4h10v3a5 5 0 0 1-10 0zM5 5h2v2a2 2 0 0 1-2-2zM17 5h2a2 2 0 0 1-2 2zM10 13h4v3h3v3H7v-3h3z"/></svg>NEW PR</div>
+      <div class="pr-big">${v.weight}×${v.reps}</div>
+      <div class="pr-sub">${esc(up)} · est. 1RM ${e1}</div><div class="pr-name">${esc(name)}</div>
+      <div class="pr-btns">${canTell ? '<button data-pr="tell">Tell coach</button>' : ''}<button class="solid" data-pr="close">Keep going</button></div></div>`;
+    document.body.appendChild(el);
+    if (navigator.vibrate) try { navigator.vibrate([40, 60, 40, 60, 120]); } catch (_) { /* ignore */ }
+    const close = () => { el.remove(); };
+    el.addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-pr]');
+      if (b && b.dataset.pr === 'tell') { b.disabled = true; const ok = await Chat.post(`🏆 New PR: ${name} ${v.weight} ${u} × ${v.reps}`); C.toast(ok ? 'Sent to your coach' : 'Couldn\'t send'); close(); return; }
+      if (b || e.target === el) close();
+    });
+    setTimeout(() => { if (document.body.contains(el)) close(); }, 9000);
+  }
+
   // ---------- rest timer ----------
   let timer = null;
   function startTimer(sec, label) {
     stopTimer();
     if (!sec) return;
     const el = document.getElementById('rest-timer');
-    timer = { end: Date.now() + sec * 1000, label, iv: null };
+    timer = { end: Date.now() + sec * 1000, label, iv: null, total: sec };
     const tick = () => {
       if (!timer) return;
       const left = Math.round((timer.end - Date.now()) / 1000);
@@ -766,7 +790,8 @@
         setTimeout(() => { if (timer && !timer.iv) stopTimer(); }, 6000);
         return;
       }
-      el.innerHTML = `<span><span>Rest <strong>${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}</strong></span>${label ? `<span class="rt-label">${esc(label)}</span>` : ''}</span>
+      const C2 = 2 * Math.PI * 17, frac = Math.max(0, Math.min(1, left / (timer.total || 1)));
+      el.innerHTML = `<svg class="rt-ring" width="42" height="42" viewBox="0 0 42 42" aria-hidden="true"><circle cx="21" cy="21" r="17" fill="none" stroke="var(--ring-track)" stroke-width="5"/><circle class="rt-p" cx="21" cy="21" r="17" fill="none" stroke="var(--gold)" stroke-width="5" stroke-linecap="round" transform="rotate(-90 21 21)" stroke-dasharray="${C2.toFixed(1)}" stroke-dashoffset="${(C2 * (1 - frac)).toFixed(1)}"/></svg><span><span>Rest <strong>${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}</strong></span>${label ? `<span class="rt-label">${esc(label)}</span>` : ''}</span>
         <span><button data-action="timer-add">+15s</button><button data-action="timer-stop">Skip</button></span>`;
     };
     el.classList.remove('over');
@@ -862,7 +887,19 @@
       if (v.reps == null) { C.toast('Enter your reps'); rIn.focus(); return; }
       v.done = true;
       C.save();
+      if (navigator.vibrate) try { navigator.vibrate(18); } catch (_) { /* ignore */ }
       const f = findEx(as, sx);
+      // PR moment: this set beats the best ever logged for the lift
+      if (f && v.weight && v.reps) {
+        const best = C.liftBests().get(exKey(f.ex.name));
+        as.prShown = as.prShown || {};
+        const shown = as.prShown[exKey(f.ex.name)];
+        const beats = (a, b) => a.weight > b.weight || (a.weight === b.weight && a.reps > b.reps);
+        if (best && beats(v, best) && (!shown || beats(v, shown))) {
+          as.prShown[exKey(f.ex.name)] = { weight: v.weight, reps: v.reps }; C.save();
+          setTimeout(() => prBurst(f.ex.name, v, best), 250);
+        }
+      }
       const restTxt = f && (f.block && f.block.type === 'superset' ? (f.last ? f.block.rest : null) : f.ex.rest);
       C.render();
       if (restTxt) startTimer(restSeconds(restTxt), f.ex.name);

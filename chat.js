@@ -214,6 +214,21 @@
       return false;
     },
     composing: () => document.activeElement && document.activeElement.id === 'chat-input',
+    totalUnread: () => totalUnread(),
+    // a quick message from elsewhere in the app (e.g. "Tell coach" on a PR); clients only
+    async post(text) {
+      if (!available() || isCoach() || !String(text || '').trim()) return false;
+      const { error } = await sb.from('messages').insert({ client_id: me(), body: String(text).trim() });
+      if (error) return false;
+      loadSummary(); return true;
+    },
+    // the latest message from the coach, for the client's home screen
+    latest: () => {
+      if (!available() || isCoach()) return null;
+      const s0 = st.summary.find((x) => x.client_id === me()) || st.summary[0];
+      if (!s0 || !s0.last_body || s0.last_sender === me()) return null;
+      return { body: s0.last_body, name: (window.Cloud && Cloud.coach && (Cloud.coach.full_name || '').split(' ')[0]) || 'Coach' };
+    },
     unread: (clientId) => { const s = st.summary.find((x) => x.client_id === clientId); return s ? Number(s.unread || 0) : 0; },
     totalUnread,
   };
