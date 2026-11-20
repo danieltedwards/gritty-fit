@@ -284,12 +284,19 @@
       const Cg = Math.max(25, Math.round((kcal - P * 4 - t.fat * 9) / 4));
       t = Object.assign({}, t, { kcal: Math.round(P * 4 + Cg * 4 + t.fat * 9), protein: P, carbs: Cg });
     }
+    if (method === 'zone') {
+      const z = zoneBlocks(p, bw, bf, co.blocks);
+      t = Object.assign({}, t, { protein: z.blocks * ZB.p, carbs: z.blocks * ZB.c, fat: z.blocks * 3, kcal: z.blocks * (ZB.p * 4 + ZB.c * 4 + 27), blocks: z.blocks });
+    } else if (method === 'meal' && window.MealPlans) {
+      const tot = MealPlans.totals(co.mealPlan);
+      t = tot.kcal ? Object.assign({}, t, { kcal: tot.kcal, protein: tot.p || t.protein }) : t;
+    }
     const meals = distribute(layout(p, type, after), t, type);
     return { p, type, after, bw, bf, method, style, targets: t, meals, override: !!(ov.type || ov.after != null) };
   }
-  function targetsFor(iso) { const d = dayInfo(iso); return d && d.method !== 'plate' ? d.targets : null; }
-  // a coach can run a client on Coach macros or the Plate method before the client fills in the setup
-  const coachRun = (n) => !!(n && n.coach && ((n.coach.method === 'coach' && n.coach.macros) || n.coach.method === 'plate'));
+  function targetsFor(iso) { const d = dayInfo(iso); return d && !['plate', 'meal'].includes(d.method) ? d.targets : null; }
+  // a coach can run a client on Coach macros, Plate, Meal plan or Zone (with a block count) before the client fills in the setup
+  const coachRun = (n) => !!(n && n.coach && ((n.coach.method === 'coach' && n.coach.macros) || n.coach.method === 'plate' || (n.coach.method === 'meal' && n.coach.mealPlan) || (n.coach.method === 'zone' && n.coach.blocks)));
   const COACH_ONLY_PROFILE = (st) => ({ sex: st.settings.sex || 'f', age: st.settings.age || 30, heightIn: (st.settings.heightCm || 168) / 2.54, weightLb: 160, goal: 'maintain', pace: 'standard', job: 'desk', meals: 4, trainAfter: 2, shake: true,
     schedule: { 0: 'rest', 1: 'moderate', 2: 'moderate', 3: 'rest', 4: 'moderate', 5: 'moderate', 6: 'light' } });
   const active = () => { const n = S().nutrition; return !!(n && (n.profile || coachRun(n))); };
@@ -320,7 +327,7 @@
       <label class="ed-check" style="margin-bottom:10px"><input type="checkbox" name="shake" ${p.shake === false ? '' : 'checked'}><span>Protein + carb shake around training</span></label>
       <div class="sub" style="font-weight:700;margin:10px 0 6px">How you want to eat</div>
       ${n.coach && n.coach.method ? `<p class="hint" style="margin-top:0">Method set by your coach: <strong>${esc(METHODS[methodOf(n)].n)}</strong></p>`
-        : C.field('Method', sel('method', methodOf(n), ['auto', 'calpro', 'plate'].map((k) => [k, METHODS[k].n])), 'Auto: full macros that adjust over time · Calories + Protein: two numbers · Plate: no counting')}
+        : C.field('Method', sel('method', methodOf(n), ['auto', 'calpro', 'plate', 'zone'].map((k) => [k, METHODS[k].n])), 'Auto: full macros that adjust over time · Calories + Protein: two numbers · Plate: no counting · Zone: blocks per meal')}
       ${n.coach && n.coach.style ? `<p class="hint">Diet style set by your coach: <strong>${esc(STYLES[styleOf(n)].n)}</strong></p>`
         : C.field('Diet style', sel('style', p.style || 'standard', Object.entries(STYLES).map(([k, v]) => [k, v.n])), 'Removes foods you don\'t eat from suggestions and recipes.')}
       ${n.coach && n.coach.window ? '' : `<div class="fields-2">${C.field('Eating window from (optional)', `<input type="time" name="wstart" value="${esc((n.window || {}).start || '')}">`)}${C.field('to', `<input type="time" name="wend" value="${esc((n.window || {}).end || '')}">`)}</div>`}
@@ -393,6 +400,52 @@
     }
     return `<div class="win-chip">⏱ Eating window ${fmtT(w.start)}–${fmtT(w.end)}${status}</div>`;
   }
+  // ---------- Zone blocks ----------
+  // 1 block = 7 g protein + 9 g carbs + 1.5 g added fat. Daily blocks: from lean mass x activity when body fat is known
+  // (Barry Sears' method), otherwise CrossFit's body-size chart (small/medium/large/extra-large).
+  const ZB = { p: 7, c: 9, f: 1.5 };
+  function zoneBlocks(p, bw, bf, coachBlocks) {
+    if (Number(coachBlocks) > 0) return { blocks: Math.round(Number(coachBlocks)), how: 'set by your coach' };
+    const days = Object.values(p.schedule || {}).filter((x) => x && x !== 'rest').length;
+    const heavy = Object.values(p.schedule || {}).filter((x) => x === 'heavy').length;
+    if (bf) {
+      const act = days >= 6 || heavy >= 3 ? 0.9 : days >= 4 ? 0.8 : days >= 2 ? 0.7 : 0.6;
+      const b = Math.round((bw * (1 - bf / 100) * act) / 7);
+      return { blocks: Math.max(p.sex === 'm' ? 12 : 10, Math.min(25, b)), how: `lean mass × activity ${act}` };
+    }
+    let b, size;
+    if (p.sex === 'm') { [b, size] = bw < 160 ? [14, 'small'] : bw < 195 ? [16, 'medium'] : bw < 230 ? [17, 'large'] : [19, 'extra-large']; }
+    else { [b, size] = bw < 130 ? [11, 'small'] : bw < 160 ? [13, 'medium'] : [14, 'large']; }
+    if (days >= 5) { b += 2; size = 'athletic ' + size; }
+    if (p.goal === 'build' && p.sex === 'm' && days >= 4) b = Math.min(21, b + 1);
+    return { blocks: b, how: `${size} ${p.sex === 'm' ? 'male' : 'female'}` };
+  }
+  function zoneSplit(B, M) { const base = Math.floor(B / M), out = Array(M).fill(base); for (let i = 0; i < B - base * M; i++) out[i]++; return out; }
+  function blockAmt(key, macro) {
+    const fd = FOODS[key]; const g = (ZB[macro] / fd[macro === 'p' ? 'p' : macro === 'c' ? 'c' : 'f']) * 100;
+    if (fd.u === 'g') return `${Math.round(g)} g`;
+    const q = g / fd.g; const t = fd.u === 'tbsp' && q < 0.5 ? `${Math.round(q * 3 * 10) / 10} tsp` : `${Math.round(q * 10) / 10} ${fd.u}`;
+    return t;
+  }
+  function zoneCard(d, iso, items) {
+    const st = S(), n = st.nutrition, p = d.p;
+    const z = zoneBlocks(p, d.bw, d.bf, (n.coach || {}).blocks);
+    const M = Math.min(6, Math.max(3, p.meals || 4)), split = zoneSplit(z.blocks, M);
+    const ticks = ((n.zoneTicks || {})[iso]) || [];
+    const ate = split.reduce((a, b, i) => a + (ticks.includes(i) ? b : 0), 0);
+    const prefs = prefsFor(p, d.style);
+    const chart = (g, macro, lbl) => `<div class="zone-chart"><strong>${lbl}</strong>${prefs[g].slice(0, 4).map((k) => `<span>${esc(FOODS[k].n.replace(/ \(.*\)/, ''))} <em>${blockAmt(k, macro)}</em></span>`).join('')}</div>`;
+    let h = `<div class="card"><div class="card-head"><h2>Zone · ${z.blocks} blocks</h2><button class="btn small" data-action="nut-setup">Edit</button></div>
+      ${windowHTML(n, iso)}
+      <div class="zone-total"><div><span class="big">${ate}</span><small> / ${z.blocks} blocks eaten</small></div><div class="progress" style="flex:1"><i style="width:${(ate / z.blocks) * 100}%"></i></div></div>
+      <p class="hint" style="margin:4px 0 0">Every meal: the same number of protein, carb and fat blocks. 1 block = ${ZB.p} g protein + ${ZB.c} g carbs + ${ZB.f} g fat. Your blocks: ${esc(z.how)}.</p>
+      <div class="zone-meals">${split.map((b, i) => `<button class="plate-meal ${ticks.includes(i) ? 'on' : ''}" data-action="nut-zone" data-i="${i}" aria-pressed="${ticks.includes(i)}"><span>Meal ${i + 1}</span><strong>${b}P · ${b}C · ${b}F</strong><span>${ticks.includes(i) ? '✓ Eaten' : 'Tap when eaten'}</span></button>`).join('')}</div>
+      <details style="margin-top:10px"><summary class="sub" style="font-weight:700">Block chart: what 1 block looks like</summary>
+        ${chart('protein', 'p', 'Protein')}${chart('carb', 'c', 'Carbs')}${chart('fat', 'f', 'Fat')}</details>
+      <p class="hint" style="margin:8px 0 0"><strong>Zone blocks</strong>${d.style !== 'standard' ? ' · ' + esc(STYLES[d.style].n) : ''}${p.flagged ? ' · <strong>coach review</strong>' : ''}</p></div>`;
+    if (items.length) h += `<div class="card"><div class="card-head"><h2>Logged</h2></div><ul class="list">${items.map((f) => `<li><div class="grow" data-action="edit-food" data-id="${f.id}" style="cursor:pointer"><div class="title">${esc(f.name)}</div><div class="meta">≈ ${Math.round((f.protein || 0) / ZB.p * 2) / 2}P · ${Math.round((f.carbs || 0) / ZB.c * 2) / 2}C blocks</div></div><button class="del" data-action="del-food" data-id="${f.id}" aria-label="Delete">×</button></li>`).join('')}</ul></div>`;
+    return h;
+  }
   // ---------- plate method: no counting ----------
   function plateCard(d, iso, items) {
     const st = S(), n = st.nutrition, p = d.p, m = p.sex === 'm';
@@ -432,6 +485,8 @@
     }
     const d = dayInfo(dateIso), st = S(), p = d.p, t = d.targets;
     if (d.method === 'plate') return plateCard(d, dateIso, items);
+    if (d.method === 'zone') return zoneCard(d, dateIso, items);
+    if (d.method === 'meal' && window.MealPlans) return MealPlans.card(d, dateIso, items);
     const sum = (k) => items.reduce((a, f) => a + (f[k] || 0), 0);
     const got = { kcal: sum('kcal'), p: sum('protein'), c: sum('carbs'), f: sum('fat') };
     const bar = (label, v, goal, unit) => `<div class="mbar"><div class="row" style="justify-content:space-between"><span>${label}</span><span class="sub">${Math.round(v)} / ${goal}${unit}</span></div><div class="progress ${v > goal * 1.08 ? 'over' : ''}"><i style="width:${Math.min(100, (v / (goal || 1)) * 100)}%"></i></div></div>`;
@@ -481,6 +536,12 @@
   // ---------- actions ----------
   const actions = {
     'nut-setup': () => setupForm(),
+    'nut-zone': (el) => {
+      const n = S().nutrition, iso = C.ui.foodDate || C.todayISO(), i = +el.dataset.i;
+      n.zoneTicks = n.zoneTicks || {}; const a = n.zoneTicks[iso] || (n.zoneTicks[iso] = []);
+      const k = a.indexOf(i); if (k >= 0) a.splice(k, 1); else a.push(i);
+      C.save(); C.render();
+    },
     'nut-plate': (el) => {
       const n = S().nutrition, iso = C.ui.foodDate || C.todayISO(), i = +el.dataset.i;
       n.plates = n.plates || {}; const a = n.plates[iso] || (n.plates[iso] = []);
@@ -689,9 +750,11 @@
     const meth = arguments[0].method || 'auto';
     const text0 = `${unitW(actual)}/week vs goal ${p.goal === 'maintain' ? 'steady' : unitW(target) + '/week'}.` + (status === 'ok' ? ' On track: keep everything the same.' : ` ${why}: ${change > 0 ? 'add' : 'take off'} ${Math.abs(change)} kcal a day, mostly ${change > 0 ? 'added to' : 'from'} carbs.`);
     let text = text0;
-    if (status !== 'ok' && meth === 'plate') { const n = Math.max(1, Math.round(Math.abs(change) / 100)); text = text0.replace(/: (add|take off) \d+ kcal a day, mostly (added to|from) carbs\./, `: ${change > 0 ? 'add' : 'drop'} ${n} cupped hand${n > 1 ? 's' : ''} of carbs a day.`); }
-    const lowLog = foodDays != null && foodDays < 4 && meth !== 'plate';
-    return Object.assign(base, { status, actual, target, change, text, lowLog, newAdjust: base.kcalAdjust + change });
+    if (status !== 'ok' && meth === 'plate') { const n = Math.min(2, Math.max(1, Math.round(Math.abs(change) / 100))); text = text0.replace(/: (add|take off) \d+ kcal a day, mostly (added to|from) carbs\./, `: ${change > 0 ? 'add' : 'drop'} ${n} cupped hand${n > 1 ? 's' : ''} of carbs a day.`); }
+    if (status !== 'ok' && meth === 'zone') { const n = Math.min(2, Math.max(1, Math.round(Math.abs(change) / 77.5))); text = text0.replace(/: (add|take off) \d+ kcal a day, mostly (added to|from) carbs\./, `: ${change > 0 ? 'add' : 'take off'} ${n} block${n > 1 ? 's' : ''} a day.`); }
+    if (status !== 'ok' && meth === 'meal') text = text0.replace(/: (add|take off) (\d+) kcal a day, mostly (added to|from) carbs\./, (m0, a, k) => `: move them to a meal plan about ${k} kcal ${a === 'add' ? 'higher' : 'lower'}.`);
+    const lowLog = foodDays != null && foodDays < 4 && !['plate', 'meal', 'zone'].includes(meth);
+    return Object.assign(base, { method: meth, status, actual, target, change, text, lowLog, newAdjust: base.kcalAdjust + change });
   }
 
   window.Nutrition = {
@@ -701,6 +764,7 @@
       ctx.modalActions['lib-new'] = () => { C.ui.recipeReturn = true; C.closeModal(); setTimeout(() => Recipes.open(null), 0); };
       document.addEventListener('change', onChange);
     },
+    zoneBlocks, windowHTML: (n, iso) => windowHTML(n, iso),
     active, dayInfo, targetsFor, foodCard, slotsFor, setupForm, checkin, weightInfo, METHODS, STYLES, methodOf, styleOf, recipeFits, prefsFor,
     _macros: macros, _layout: layout, _distribute: distribute, _amounts: amounts, FOODS, TRAIN,
   };

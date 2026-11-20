@@ -88,7 +88,7 @@
       const name = x.c.full_name || x.c.email, id = x.c.client_id;
       const btns = ci.status === 'nodata' ? `<button class="btn small" data-action="chat-with" data-id="${id}" data-name="${esc(name)}">💬 Ask them</button><button class="btn small" data-action="ci-skip" data-id="${id}">Skip</button>`
         : ci.status === 'ok' ? `<button class="btn small primary" data-action="ci-skip" data-id="${id}">✓ Keep as is</button><button class="btn small" data-action="ci-edit" data-id="${id}">Change…</button>`
-        : `<button class="btn small primary" data-action="ci-approve" data-id="${id}">Approve ${ci.change > 0 ? '+' : '−'}${Math.abs(ci.change)} kcal</button><button class="btn small" data-action="ci-edit" data-id="${id}">Edit</button><button class="btn small" data-action="ci-skip" data-id="${id}">Keep as is</button>`;
+        : `<button class="btn small primary" data-action="ci-approve" data-id="${id}">${ci.method === 'meal' ? 'Change meal plan' : ci.method === 'zone' ? `Approve ${ci.change > 0 ? '+' : '−'}${Math.min(2, Math.max(1, Math.round(Math.abs(ci.change) / 77.5)))} block(s)` : ci.method === 'plate' ? `Approve ${ci.change > 0 ? '+' : '−'}${Math.min(2, Math.max(1, Math.round(Math.abs(ci.change) / 100)))} carb portion(s)` : `Approve ${ci.change > 0 ? '+' : '−'}${Math.abs(ci.change)} kcal`}</button><button class="btn small" data-action="ci-edit" data-id="${id}">Edit</button><button class="btn small" data-action="ci-skip" data-id="${id}">Keep as is</button>`;
       return `<div class="ccal-client"><div class="ccal-item"><span class="ccal-tag ${cls[ci.status]}">${tag[ci.status]}</span><div class="grow"><strong>${esc(name)}</strong>
         <div class="meta">${esc(ci.text)}</div>
         ${ci.lowLog && ci.status !== 'ok' && ci.status !== 'nodata' ? `<div class="meta"><strong>Food logged ${ci.foodDays}/7 days.</strong> A stall can be tracking, not the plan. Worth a chat first.</div>` : ''}
@@ -190,7 +190,23 @@
 
   const nameOf = (id) => { const x = st.clients && st.clients.find((y) => y.c.client_id === id); return x ? x.c.full_name || x.c.email : 'client'; };
   const actions = {
-    'ci-approve': (el) => { const x = st.clients.find((y) => y.c.client_id === el.dataset.id); const ci = x && checkinFor(x); if (ci) applyAdjust(el.dataset.id, ci.newAdjust); },
+    'ci-approve': async (el) => {
+      const x = st.clients.find((y) => y.c.client_id === el.dataset.id); const ci = x && checkinFor(x); if (!ci) return;
+      const meth = (x.targets && x.targets.nMethod) || 'auto';
+      if (meth === 'meal') { markReviewed(x.c.client_id); C.actions['coach-targets']({ dataset: { id: x.c.client_id, name: x.c.full_name || x.c.email } }); return; }
+      if (meth === 'zone' && window.Nutrition) {
+        const n = x.nutrition, p = n && n.profile; if (!p) return;
+        const w = Nutrition.weightInfo(x.body, x.state.settings.units);
+        const cur = (x.targets && x.targets.nBlocks) || Nutrition.zoneBlocks(p, w ? w.lb : p.weightLb, p.bodyFat, null).blocks;
+        const step = Math.min(2, Math.max(1, Math.round(Math.abs(ci.change) / 77.5))) * Math.sign(ci.change);
+        const t = Object.assign({}, x.targets || {}, { nBlocks: Math.max(6, cur + step), v: Date.now(), checkin: C.todayISO() });
+        const { error } = await sb().from('profiles').update({ targets: t }).eq('id', x.c.client_id);
+        if (error) { C.toast(error.message); return; }
+        x.targets = t; markReviewed(x.c.client_id); C.toast(`Zone: ${t.nBlocks} blocks a day`); C.render(); return;
+      }
+      if (meth === 'plate') { const k = Math.min(2, Math.max(1, Math.round(Math.abs(ci.change) / 100))) * Math.sign(ci.change); applyAdjust(el.dataset.id, ci.kcalAdjust + k * 100); return; }
+      applyAdjust(el.dataset.id, ci.newAdjust);
+    },
     'ci-skip': (el) => { markReviewed(el.dataset.id); C.toast('Marked reviewed. Next check-in in 2 weeks'); C.render(); },
     'ci-edit': (el) => {
       const x = st.clients.find((y) => y.c.client_id === el.dataset.id); const ci = x && checkinFor(x); if (!ci) return;

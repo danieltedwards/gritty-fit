@@ -156,6 +156,7 @@
     if (window.Chat) Chat.onSignedIn();
     if (window.Assign) Assign.onSignedIn();
     if (window.ExLib) ExLib.onSignedIn();
+    if (window.MealPlans) MealPlans.onSignedIn();
     if (window.Notify) Notify.onSignedIn();
     C.softRender();
   }
@@ -166,6 +167,7 @@
     if (window.Chat) Chat.onSignedOut();
     if (window.Assign) Assign.onSignedOut();
     if (window.ExLib) ExLib.onSignedOut();
+    if (window.MealPlans) MealPlans.onSignedOut();
     if (window.Import) Import.reset();
     if (window.Notify) Notify.onSignedOut();
     C.softRender();
@@ -574,6 +576,7 @@
         ${data && data.length ? `<div class="res-head">Sent</div><ul class="list">${data.map((n) => `<li><div class="grow"><div style="white-space:pre-wrap">${esc(n.body)}</div><div class="meta">${new Date(n.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })} · ${n.read_at ? 'read ✓' : 'unread'}</div></div></li>`).join('')}</ul>` : ''}`, null, { hideSave: true });
     },
     'coach-targets': async (el) => {
+      if (window.MealPlans && !MealPlans.list().length) await MealPlans.load().catch(() => {});
       const { data } = await sb.from('profiles').select('targets').eq('id', el.dataset.id).maybeSingle();
       const t = (data && data.targets) || {};
       const cl = coachData && coachData.clients.find((c) => c.client_id === el.dataset.id);
@@ -584,6 +587,8 @@
       const mt = (t.nMacros && t.nMacros.train) || {}, mr = (t.nMacros && t.nMacros.rest) || {};
       const opt = (obj, val, blank) => (blank ? `<option value="">${blank}</option>` : '') + Object.entries(obj).filter(([k]) => k !== 'meal' && k !== 'zone' || (window.MealPlans && MealPlans.ready)).map(([k, v]) => `<option value="${k}" ${val === k ? 'selected' : ''}>${esc(v.n)}</option>`).join('');
       const num = (name, v, ph) => C.inNum(name, v, `min="0" placeholder="${ph || ''}"`);
+      let zAuto = '?';
+      try { if (np && N.zoneBlocks) { const w = cl && cl.last_weight != null ? Number(cl.last_weight) : np.weightLb; zAuto = N.zoneBlocks(np, w, np.bodyFat, null).blocks; } } catch (_) { /* ignore */ }
       C.openModal(`<h2>Nutrition for ${esc(el.dataset.name)}</h2>
         ${np ? `<p class="hint" style="margin-top:0">Their setup: ${esc(({ cut: 'Cut', maintain: 'Maintain', build: 'Build' })[np.goal] || '')}${np.goal !== 'maintain' ? ' · ' + esc(np.pace || '') : ''} · ${np.meals} meals · ${np.sex === 'm' ? 'M' : 'F'} ${np.age}${np.flagged ? ' · <strong class="bad">flagged health answer: review before cutting</strong>' : ''}</p>` : '<p class="hint" style="margin-top:0">They haven\'t filled in their nutrition setup yet. Coach macros and the Plate method work without it.</p>'}
         <div class="fields-2">${field('Method', `<select name="nMethod">${opt(METHODS, method)}</select>`)}${field('Diet style', `<select name="nStyle">${opt(STYLES, t.nStyle || '', 'Their choice')}</select>`)}</div>
@@ -598,6 +603,11 @@
           <p class="hint">Grams per day. With protein, carbs and fat filled in, calories come from those. Leave carbs empty and give calories to fill carbs from what's left. Rest days empty = same as training days.</p></div>
         <div data-m="calpro"><div class="fields-2">${field('Calories / day', num('nCal', t.nCal, 'auto'))}${field('Protein (g/day)', num('nProtein2', t.nProtein, 'auto'))}</div>
           <p class="hint">Leave empty to use GRIT's calculated numbers.</p></div>
+        <div data-m="meal">${t.nMealPlan ? `<p class="hint" style="margin-top:0">Current: <strong>${esc(t.nMealPlan.name)}</strong> <button type="button" class="link-btn" data-modal-action="mp-client-edit">✎ Customize for ${esc(el.dataset.name)}</button></p>` : ''}
+          ${window.MealPlans ? field(t.nMealPlan ? 'Switch to' : 'Meal plan', MealPlans.pickerHTML(t.nMealPlan)) : ''}
+          ${window.MealPlans && !MealPlans.list().length ? '<p class="hint">No meal plans yet: build one under <strong>Meal plans</strong> on your dashboard first.</p>' : '<p class="hint">They get their own copy, so you can customize it without changing your template.</p>'}</div>
+        <div data-m="zone">${field('Blocks per day', `<input type="number" name="nBlocks" value="${t.nBlocks || ''}" min="6" max="30" placeholder="auto: ${zAuto}">`)}
+          <p class="hint">Empty = automatic from their size and training (CrossFit's chart), or lean mass if they log body fat.</p></div>
         <div data-m="plate"><p class="hint">Portions by hand size: palms of protein, cupped hands of carbs, thumbs of fat, fists of veggies. Check-ins suggest adding or dropping a carb portion.</p></div>
         <div class="fields-2">${field('Eating window from', `<input type="time" name="wstart" value="${esc(t.nWinStart || '')}">`)}${field('to (optional)', `<input type="time" name="wend" value="${esc(t.nWinEnd || '')}">`)}</div>
         <label class="ed-check"><input type="checkbox" name="mkdef"><span>Make this method and diet style my default for new clients</span></label>
@@ -615,6 +625,12 @@
         if (m === 'auto') { if (n('kcalAdjust') != null) nt.kcalAdjust = n('kcalAdjust'); if (n('nProtein') != null) nt.nProtein = n('nProtein'); }
         else if (t.kcalAdjust != null) nt.kcalAdjust = t.kcalAdjust; // keep check-in adjustments when switching methods
         if (m === 'calpro') { if (n('nCal') != null) nt.nCal = n('nCal'); if (n('nProtein2') != null) nt.nProtein = n('nProtein2'); }
+        if (m === 'meal') {
+          const pick = fd.get('nMealPlan'), tpl = pick && window.MealPlans ? MealPlans.byId(pick) : null;
+          if (tpl) { const c = JSON.parse(JSON.stringify(tpl)); c.templateId = tpl.id; delete c.id; nt.nMealPlan = c; }
+          if (!nt.nMealPlan) { C.toast('Choose a meal plan'); return false; }
+        }
+        if (m === 'zone') { if (n('nBlocks') != null) nt.nBlocks = n('nBlocks'); else delete nt.nBlocks; }
         if (m === 'coach') {
           const grab = (pre) => { const o = {}; ['kcal', 'p', 'c', 'f'].forEach((k) => { if (n(pre + k) != null) o[k] = n(pre + k); }); return o; };
           const tr = grab('mt_'), rs = grab('mr_');
@@ -639,6 +655,16 @@
         const d = f.querySelector('#nm-desc'); if (d) d.textContent = (METHODS[m] && METHODS[m].d) || '';
       };
       f.querySelector('[name=nMethod]').addEventListener('change', sync); sync();
+      C.modalActions['mp-client-edit'] = () => {
+        if (!t.nMealPlan || !window.MealPlans) return;
+        C.closeModal();
+        setTimeout(() => MealPlans.editor(t.nMealPlan, { title: `${t.nMealPlan.name} · ${el.dataset.name}`, forClient: el.dataset.name, onSave: async (plan) => {
+          const nt2 = Object.assign({}, t, { nMealPlan: plan, nMethod: 'meal', v: Date.now() });
+          const { error } = await sb.from('profiles').update({ targets: nt2 }).eq('id', el.dataset.id);
+          if (error) { C.toast(error.message); return false; }
+          C.toast(`Saved for ${el.dataset.name}`);
+        } }), 0);
+      };
       const sum = () => {
         const v = (k) => Number((f.querySelector(`[name=${k}]`) || {}).value) || 0;
         const line = (pre, lbl) => (v(pre + 'p') && v(pre + 'c') && v(pre + 'f') ? `${lbl}: ${v(pre + 'p') * 4 + v(pre + 'c') * 4 + v(pre + 'f') * 9} kcal from the macros` : '');
@@ -756,8 +782,8 @@
       <div class="row" style="margin-bottom:8px"><a class="btn primary" href="${esc(mailto)}">✉️ Email</a><a class="btn primary" href="${esc(sms)}">💬 Text</a></div>
       <div class="row"><button class="btn" data-modal-action="coach-share">Share…</button><button class="btn" data-modal-action="coach-copy">Copy message</button></div>
       <p class="hint" style="margin-top:10px">Single use. They can also type the code in Settings → Account → Enter invite code.</p>`, null, { hideSave: true });
-    modalActions['coach-share'] = async () => { try { if (navigator.share) await navigator.share({ title: 'GRIT invite', text: msg }); else throw new Error('no share'); } catch (_) { modalActions['coach-copy'](); } };
-    modalActions['coach-copy'] = async () => { try { await navigator.clipboard.writeText(msg); C.toast('Copied. Paste it into a text or email'); } catch (_) { prompt('Copy this message:', msg); } };
+    C.modalActions['coach-share'] = modalActions['coach-share'] = async () => { try { if (navigator.share) await navigator.share({ title: 'GRIT invite', text: msg }); else throw new Error('no share'); } catch (_) { modalActions['coach-copy'](); } };
+    C.modalActions['coach-copy'] = modalActions['coach-copy'] = async () => { try { await navigator.clipboard.writeText(msg); C.toast('Copied. Paste it into a text or email'); } catch (_) { prompt('Copy this message:', msg); } };
   }
 
   // ---------- coach dashboard view ----------
@@ -834,7 +860,7 @@
     if (custom.length) h += `<div class="res-head">Client versions</div>` + custom.map((p) => `<div class="client"><div class="title" style="font-weight:800">${esc(p.data.name)}</div>
         <div class="sub" style="font-size:13px">For ${esc(clientName(p.data.forClient))}${p.data.basedOn ? ' · based on ' + esc((plans.find((x) => x.id === p.data.basedOn) || { data: { name: p.data.basedOn } }).data.name) : ''}</div>
         <div class="row" style="margin-top:8px"><button class="btn small" data-action="coach-plan-edit" data-id="${esc(p.id)}">✏️ Edit</button><button class="btn small" data-action="plan-guide" data-id="${esc(p.id)}">View</button></div></div>`).join('');
-    const recipesHTML = window.Recipes ? Recipes.section(coachData.recipes) : '';
+    const recipesHTML = (window.MealPlans ? MealPlans.section() : '') + (window.Recipes ? Recipes.section(coachData.recipes) : '');
     if (notUploaded.length) h += `<div class="res-head">Ready to add</div><ul class="list">${notUploaded.map((b) => `<li><div class="grow"><div class="title">${esc(b.name)}</div><div class="meta">${esc(b.phase || '')}</div></div><button class="btn small primary" data-action="coach-plan-upload" data-file="${esc(b.file)}">Add</button></li>`).join('')}</ul>`;
     h += '</div>';
     h += recipesHTML;

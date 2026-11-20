@@ -812,3 +812,19 @@ drop policy if exists "exlib client read" on public.exercise_library;
 create policy "exlib client read" on public.exercise_library for select to authenticated using (coach_id = public.my_coach());
 grant select, insert, update, delete on public.exercise_library to authenticated;
 revoke all on public.exercise_library from anon;
+
+-- ---------- meal plans: the coach's meal-plan templates ----------
+-- A client gets a copy of the plan in their targets (profiles.targets.nMealPlan), so only the coach reads this table.
+create table if not exists public.meal_plans (
+  coach_id   uuid not null references public.profiles(id) on delete cascade,
+  id         text not null,
+  data       jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now(),
+  primary key (coach_id, id)
+);
+alter table public.meal_plans enable row level security;
+drop policy if exists "meal plans coach" on public.meal_plans;
+create policy "meal plans coach" on public.meal_plans for all to authenticated
+  using (coach_id = auth.uid() and public.is_coach()) with check (coach_id = auth.uid() and public.is_coach());
+grant select, insert, update, delete on public.meal_plans to authenticated;
+revoke all on public.meal_plans from anon;
