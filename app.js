@@ -21,7 +21,7 @@
   const relDay = (iso) => { const diff = daysBetween(iso, todayISO()); return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : prettyDate(iso); };
   const byDateDesc = (a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || ''));
 
-  const APP_VERSION = '2026.11.20-d';
+  const APP_VERSION = '2026.11.20-e';
   // ---------- state ----------
   const DEFAULT_STATE = () => ({
     version: 1,
@@ -265,112 +265,128 @@
     const calT = kcalTarget(t);
     const nT = window.Nutrition && Nutrition.targetsFor ? Nutrition.targetsFor(t) : null;
     const protT = nT ? nT.protein : st.proteinTarget;
-    const ws = weekStart(t);
-    const weekW = workoutsInWeek(ws);
-    const wDays = new Set(weekW.map((w) => w.date));
     const latest = latestWith('weight');
     const weights = bodySorted().filter((b) => b.weight != null).map((b) => ({ x: b.date, y: b.weight }));
     const weekAgo = weights.filter((p) => p.x <= addDays(t, -7)).pop();
     const wChange = latest && weekAgo ? round1(latest.weight - weekAgo.y) : null;
     const habits = activeHabits();
-    const doneHabits = habits.filter((h) => habitDone(t, h.id));
     const strk = streak(dayHasActivity);
-    const hour = new Date().getHours();
-    const trainedToday = S.workouts.some((w) => w.date === t);
+    const todaysW = S.workouts.filter((w) => w.date === t);
     const planned = window.Training && Training.plannedOn ? Training.plannedOn(t) : [];
     const sent = window.Assign ? Assign.pendingOn(t) : [];
     const nut = window.Nutrition && Nutrition.active && Nutrition.active() ? Nutrition.dayInfo(t) : null;
-
-    // ---- today's score: train + fuel + habits ----
-    const trainPart = trainedToday || (!planned.length && !sent.length) ? 1 : 0;
-    const fuelPart = nut && ['plate', 'meal', 'zone'].includes(nut.method) ? Math.min(1, ((S.nutrition.plates || {})[t] || Object.keys(((S.nutrition.mpTicks || {})[t]) || {}) || ((S.nutrition.zoneTicks || {})[t]) || []).length / Math.max(1, nut.p.meals || 4))
-      : calT ? Math.min(1, eaten / calT) : 0;
-    const habitPart = habits.length ? doneHabits.length / habits.length : 1;
-    const score = Math.round(((trainPart + fuelPart + habitPart) / 3) * 100);
-    const ring = (r, frac, color, w) => { const c = 2 * Math.PI * r; return `<circle cx="48" cy="48" r="${r}" fill="none" stroke="var(--ring-track)" stroke-width="${w}"/>${frac > 0.01 ? '' : '<!--'}<circle class="ring-fill" cx="48" cy="48" r="${r}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="round" transform="rotate(-90 48 48)" style="--len:${(frac * c).toFixed(1)};--full:${c.toFixed(1)}" stroke-dasharray="${(frac * c).toFixed(1)} ${c.toFixed(1)}"/>${frac > 0.01 ? '' : '-->'}`; };
-
-    // ---- brief items ----
-    const items = [];
-    const ico = (path) => `<span class="bi-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${path}</svg></span>`;
-    const I_TRAIN = '<path d="M6 7v10M18 7v10M3 10v4M21 10v4M6 12h12"/>', I_FOOD = '<path d="M7 3v8a3 3 0 0 0 6 0V3M10 3v18M17 3c-2 2-2 6 0 8v10"/>', I_CHECK = '<path d="M5 12l5 5 9-10"/>', I_SCALE = '<path d="M4 20h16M6 20l2-12h8l2 12M12 8V4"/>';
-    if (S.activeSession) items.push(`<button class="brief-item hero" data-action="session-open">${ico(I_TRAIN)}<span class="bi-txt"><strong>Workout in progress</strong><span>${esc(S.activeSession.dayName || '')}</span></span><span class="bi-go">RESUME</span></button>`);
-    else if (sent.length) items.push(`<button class="brief-item hero" data-action="assign-start" data-id="${sent[0].id}">${ico(I_TRAIN)}<span class="bi-txt"><strong>${esc(sent[0].title)}</strong><span>From your coach${sent[0].note ? ' · ' + esc(sent[0].note) : ''}</span></span><span class="bi-go">START</span></button>`);
-    else if (trainedToday) { const w = S.workouts.filter((x) => x.date === t).slice(-1)[0]; items.push(`<button class="brief-item done" data-action="goto" data-tab="train">${ico(I_CHECK)}<span class="bi-txt"><strong>Trained today</strong><span>${esc(w.type || 'Workout')}${w.minutes ? ' · ' + w.minutes + ' min' : ''}</span></span></button>`); }
-    else if (planned.length) {
-      const x = planned[0], names = x.day.blocks.flatMap((b) => b.exercises.map((e) => e.name));
-      items.push(`<button class="brief-item hero" data-action="session-start" data-day="${x.day.id}" data-plan="${esc(x.plan.id)}">${ico(I_TRAIN)}<span class="bi-txt"><strong>${esc(x.day.label)} · ${esc(x.day.name)}</strong><span>${esc(names.slice(0, 3).join(' · '))}${names.length > 3 ? ' +' + (names.length - 3) : ''}</span></span><span class="bi-go">START</span></button>`);
-    } else items.push(`<button class="brief-item" data-action="add-workout">${ico(I_TRAIN)}<span class="bi-txt"><strong>Rest day</strong><span>Moved anyway? Log it.</span></span><span class="bi-go ghost">LOG</span></button>`);
-    if (nut && nut.method === 'meal') items.push(`<button class="brief-item" data-action="goto" data-tab="food">${ico(I_FOOD)}<span class="bi-txt"><strong>Meal plan</strong><span>Tick off your meals</span></span><span class="bi-go ghost">OPEN</span></button>`);
-    else if (nut && (nut.method === 'plate' || nut.method === 'zone')) items.push(`<button class="brief-item" data-action="goto" data-tab="food">${ico(I_FOOD)}<span class="bi-txt"><strong>${nut.method === 'plate' ? 'Build your plates' : 'Zone blocks'}</strong><span>Tap each meal when it's done</span></span><span class="bi-go ghost">OPEN</span></button>`);
-    else if (calT) {
-      const nextMeal = nut ? nut.meals.find((m) => !foodOn(t).some((f) => f.meal === m.label)) : null;
-      const left = Math.max(0, Math.round(calT - eaten)), pLeft = protT ? Math.max(0, Math.round(protT - protein)) : null;
-      items.push(`<button class="brief-item ${eaten >= calT * 0.95 ? 'done' : ''}" data-action="goto" data-tab="food">${ico(I_FOOD)}<span class="bi-txt"><strong>${nextMeal ? esc(nextMeal.label) + ' next' : eaten ? `${fmt(left, 0)} kcal left` : 'Log your first meal'}</strong><span>${fmt(left, 0)} kcal left${pLeft != null ? ` · ${pLeft} g protein to go` : ''}</span></span><span class="bi-go ghost">LOG</span></button>`);
-    }
-    if (!latest || daysBetween(latest.date, t) >= 3) items.push(`<button class="brief-item" data-action="add-body">${ico(I_SCALE)}<span class="bi-txt"><strong>Weigh in</strong><span>${latest ? `Last one ${relDay(latest.date).toLowerCase()}` : 'Your first weigh-in starts the trend'}</span></span><span class="bi-go ghost">LOG</span></button>`);
-    const left = 3 - [trainPart, fuelPart >= 0.95 ? 1 : 0, habitPart].filter((x) => x >= 1).length;
     const goalW = st.goalWeight;
-    let goalLine = '';
+
+    // ---- stat line: the day's numbers, shown once ----
+    let toGoal = null, pace = '';
     if (latest && goalW != null) {
-      const togo = round1(Math.abs(latest.weight - goalW));
-      let pace = '';
+      toGoal = round1(Math.abs(latest.weight - goalW));
       const recent = weights.filter((p) => p.x >= addDays(t, -21));
       if (recent.length >= 3) {
         const days = Math.max(1, daysBetween(recent[0].x, recent[recent.length - 1].x)), perDay = (recent[recent.length - 1].y - recent[0].y) / days;
-        if (perDay && Math.sign(perDay) === Math.sign(goalW - latest.weight)) { const d = Math.round(togo / Math.abs(perDay)); if (d < 400) pace = ` · on pace for ${prettyDate(addDays(t, d), { month: 'short', day: 'numeric' })}`; }
+        if (perDay && Math.sign(perDay) === Math.sign(goalW - latest.weight)) { const d = Math.round(toGoal / Math.abs(perDay)); if (d < 400) pace = prettyDate(addDays(t, d), { month: 'short', day: 'numeric' }); }
       }
-      goalLine = togo < 0.5 ? 'At your goal weight. Hold the line.' : `${togo} ${wUnit()} to your ${fmt(goalW)} goal${pace}`;
     }
-    const coachMsg = window.Chat && Chat.latest ? Chat.latest() : null;
+    const kLeft = calT ? Math.round(calT - eaten) : null;
+    const cell = (label, big, small, cls = '') => `<div class="sl-cell"><div class="sl-l">${label}</div><div class="sl-n ${cls}">${big}</div><div class="sl-s">${small}</div></div>`;
+    const statLine = `<div class="statline">
+      ${cell(kLeft == null || kLeft >= 0 ? 'Kcal left' : 'Kcal over', calT ? fmt(Math.abs(kLeft), 0) : '—', calT ? `of ${fmt(calT, 0)}` : 'no target')}
+      ${cell('Protein', fmt(protein, 0), protT ? `of ${fmt(protT, 0)} g` : 'g')}
+      ${cell('Weight', latest ? fmt(latest.weight) : '—', latest ? (wChange ? `<span class="${wChange < 0 ? 'down' : 'up'}">${wChange < 0 ? '▼' : '▲'} ${Math.abs(wChange)} wk</span>` : relDay(latest.date).toLowerCase()) : '<span>log one</span>')}
+      ${cell('To goal', toGoal != null ? (toGoal < 0.5 ? '✓' : fmt(toGoal)) : '—', toGoal != null ? `${wUnit()}${pace ? ' · ' + pace : ''}` : '<button class="link-btn" data-action="open-settings">set goal</button>', 'gold')}</div>`;
+
+    // ---- game plan: what's next today, in order ----
+    const hm = (s) => { const [a, b] = String(s || '').split(':').map(Number); return Number.isFinite(a) ? a * 60 + (b || 0) : null; };
+    const fmtT = (m) => { const h = Math.floor(m / 60) % 24, mm = m % 60, ap = h >= 12 ? 'pm' : 'am'; return `${h % 12 || 12}${mm ? ':' + String(mm).padStart(2, '0') : ''}${ap}`; };
+    const firstMeal = hm(st.firstMeal), trainAt = hm(st.trainTime);
+    const steps = []; // { kind, label, sub, done, time, act }
+    if (!latest || latest.date !== t) {
+      if (!latest || daysBetween(latest.date, t) >= 2) steps.push({ kind: 'weigh', label: 'Weigh in', sub: latest ? `Last one ${relDay(latest.date).toLowerCase()}` : 'Starts your trend', act: 'data-action="add-body"', btn: 'LOG', time: firstMeal != null ? firstMeal - 15 : null });
+    } else steps.push({ kind: 'weigh', label: 'Weigh-in', done: true });
+    // training
+    let train = null;
+    if (S.activeSession) train = { label: 'Workout in progress', sub: S.activeSession.dayName || '', act: 'data-action="session-open"', btn: 'RESUME' };
+    else if (sent.length) train = { label: sent[0].title, sub: 'From your coach' + (sent[0].note ? ' · ' + sent[0].note : ''), act: `data-action="assign-start" data-id="${sent[0].id}"`, btn: 'START' };
+    else if (todaysW.length) train = { label: 'Workout', sub: todaysW[todaysW.length - 1].type || '', done: true };
+    else if (planned.length) { const x = planned[0]; train = { label: `Train · ${x.day.label}`, sub: `${x.day.name}`, act: `data-action="session-start" data-day="${x.day.id}" data-plan="${esc(x.plan.id)}"`, btn: 'START' }; }
+    // meals
+    const ticks = nut ? ({ plate: (S.nutrition.plates || {})[t] || [], zone: (S.nutrition.zoneTicks || {})[t] || [], meal: Object.keys(((S.nutrition.mpTicks || {})[t]) || {}).map(Number) })[nut.method] : null;
+    let meals = [];
+    if (nut && nut.method === 'meal' && S.nutrition.coach && S.nutrition.coach.mealPlan) {
+      meals = (S.nutrition.coach.mealPlan.meals || []).map((m, i) => ({ label: m.name, sub: String(m.foods || '').split('\n')[0], done: ticks.includes(i), time: hm(m.time) }));
+    } else if (nut) {
+      const ms = nut.meals.filter((m) => m.role !== 'shake');
+      const logged = new Set(foodOn(t).map((f) => f.meal));
+      meals = ms.map((m, i) => ({ label: m.label, role: m.role, sub: ['plate', 'zone'].includes(nut.method) ? (nut.method === 'zone' ? 'Your blocks' : 'Build your plate') : `${m.p} g protein · ${m.kcal} kcal`, done: ticks ? ticks.includes(i) : logged.has(m.label) }));
+    } else if (calT) {
+      const logged = new Set(foodOn(t).map((f) => f.meal));
+      meals = ['Breakfast', 'Lunch', 'Dinner'].map((m) => ({ label: m, sub: 'Log it', done: logged.has(m) }));
+    }
+    const M = meals.length;
+    meals.forEach((m, i) => {
+      if (m.time == null && firstMeal != null) m.time = firstMeal + Math.round(i * Math.min(240, (13 * 60) / Math.max(1, M - 1)));
+      m.kind = 'meal'; m.act = 'data-action="goto" data-tab="food"'; m.btn = 'LOG';
+      if (i === M - 1 && protT && protein < protT) m.sub = `Finish ${fmt(protT, 0)} g protein`;
+    });
+    // put training where it belongs: by time if we know it, else after the pre-workout meal
+    const order = meals.slice();
+    if (train) {
+      train.kind = 'train'; train.time = S.activeSession ? null : trainAt;
+      let idx = order.length;
+      if (trainAt != null && order.every((m) => m.time != null)) idx = order.findIndex((m) => m.time > trainAt);
+      else { const pre = order.findIndex((m) => m.role === 'pre'); idx = pre >= 0 ? pre + 1 : nut ? Math.min(order.length, (nut.p.trainAfter ?? 2)) : order.length; }
+      order.splice(S.activeSession ? 0 : idx < 0 ? order.length : idx, 0, train);
+    }
+    steps.push(...order);
+    const doneSteps = steps.filter((s) => s.done), todo = steps.filter((s) => !s.done);
+    let show = todo.slice(0, 3);
+    const tr = todo.find((s) => s.kind === 'train');
+    if (tr && !show.includes(tr)) show = show.slice(0, 2).concat(tr);
+    const later = todo.length - show.length;
+    const pos = (i) => [i === 0 ? 'first' : '', i === show.length - 1 ? 'last' : ''].join(' ');
+    const row = (s, i) => {
+      const next = i === 0;
+      const tm = s.time != null ? fmtT(s.time) : '';
+      if (s.kind === 'train') return `<div class="gp-row ${pos(i)}"><span class="gp-t">${tm}</span><span class="gp-dot ${next ? 'next' : 'train'}"></span>
+        <button class="gp-train" ${s.act}><span><b>${esc(s.label)}</b><small>${esc(s.sub)}</small></span><em>${s.btn}</em></button></div>`;
+      if (next) return `<div class="gp-row ${pos(i)}"><span class="gp-t gold">${tm}</span><span class="gp-dot next"></span>
+        <button class="gp-next" ${s.act}><span><strong>${esc(s.label)} · up next</strong><small>${esc(s.sub || '')}</small></span><em>${s.btn || 'GO'}</em></button></div>`;
+      return `<div class="gp-row ${pos(i)}"><span class="gp-t">${tm}</span><span class="gp-dot"></span><button class="gp-plain" ${s.act || ''}><strong>${esc(s.label)}</strong>${s.sub ? ` <small>· ${esc(s.sub)}</small>` : ''}</button></div>`;
+    };
+    const gamePlan = `<div class="gameplan"><div class="gp-head"><span>Game plan</span><span class="gp-done">${doneSteps.map((s) => '✓ ' + esc(s.label)).join(' · ')}</span></div>
+      ${show.length ? show.map(row).join('') : '<div class="gp-clear">All done today. That\'s the standard.</div>'}
+      ${later > 0 ? `<div class="gp-later">+${later} more later today</div>` : ''}
+      ${firstMeal == null && steps.length > 2 ? '<button class="link-btn gp-times" data-action="open-settings">Add your meal and training times</button>' : ''}</div>`;
+    const chips = habits.length ? `<div class="brief-habits">${habits.map((hb) => `<button class="hchip ${habitDone(t, hb.id) ? 'on' : ''}" data-action="toggle-habit" data-id="${hb.id}" aria-pressed="${habitDone(t, hb.id)}">${habitDone(t, hb.id) ? '✓ ' : ''}${esc(hb.name)}</button>`).join('')}</div>` : '';
 
     let h = window.Cloud ? Cloud.todayCards() : '';
-    h += `<section class="brief card">
-      <div class="brief-top"><svg class="score-ring" width="96" height="96" viewBox="0 0 96 96" role="img" aria-label="Today's score ${score}">
-        ${ring(40, trainPart, 'var(--accent-2)', 9)}${ring(30, fuelPart, 'var(--gold)', 8)}${ring(20, habitPart, 'var(--text)', 7)}
-        <text x="48" y="55" text-anchor="middle" class="score-num">${score}</text></svg>
-        <div class="brief-head"><div class="eyebrow gold">Daily brief</div>
-          <div class="brief-title">${left <= 0 ? '100 today. That\'s the standard.' : `${left} thing${left > 1 ? 's' : ''} left and you hit 100`}</div>
-          ${goalLine ? `<div class="sub">${esc(goalLine)}</div>` : `<div class="sub"><button class="link-btn" data-action="goto" data-tab="body">Set a goal weight</button></div>`}
-          <div class="brief-key"><span><i style="background:var(--accent-2)"></i>Train</span><span><i style="background:var(--gold)"></i>Fuel</span><span><i style="background:var(--text)"></i>Habits</span></div></div></div>
-      ${items.join('')}
-      ${habits.length ? `<div class="brief-habits">${habits.map((hb) => `<button class="hchip ${habitDone(t, hb.id) ? 'on' : ''}" data-action="toggle-habit" data-id="${hb.id}" aria-pressed="${habitDone(t, hb.id)}">${habitDone(t, hb.id) ? '✓ ' : ''}${esc(hb.name)}</button>`).join('')}</div>` : ''}
-      ${coachMsg ? `<button class="brief-coach" data-action="chat-open"><span class="bc-av">${esc((coachMsg.name || 'C').charAt(0).toUpperCase())}</span><span><strong>${esc(coachMsg.name || 'Coach')}:</strong> ${esc(String(coachMsg.body || '').slice(0, 120))}</span></button>` : ''}
-    </section>`;
-
+    h += `<section class="brief card">${statLine}${gamePlan}${chips}</section>`;
     if (window.Assign) h += Assign.card();
-    // ---- the hub ----
+
+    // ---- go to: navigation only (numbers live in the stat line) ----
     const progs = window.Training && Training.progs ? Training.progs() : [];
     const pl = progs[0] && Training.planNow ? Training.planNow(progs[0].planId) : null;
-    const bests = liftBests(); let prMonth = 0; bests.forEach((b) => { if (b.date >= addDays(t, -30) && b.sessions > 1) prMonth++; });
-    const jStreak = streak((d) => S.journal.some((j) => j.date === d));
-    const lastJ = S.journal.slice().sort((a, b) => b.date.localeCompare(a.date))[0];
-    const tile = (cls, act, inner, extra = '') => `<button class="tile ${cls}" ${act} ${extra}>${inner}</button>`;
-    h += `<div class="hub-head"><span>Your hub</span></div><section class="hub">`;
-    h += tile('wide', 'data-action="goto" data-tab="train"', `<span class="tile-bg" aria-hidden="true">W${pl && progs[0] ? (Training.programWeek(progs[0], pl).week || 1) : ''}</span>
-      <span class="tile-t">${svgI(I_TRAIN)}Train</span>
-      <span class="tile-s">${pl ? esc(pl.name) + ' · ' : ''}${wDays.size} of ${st.workoutsPerWeek} this week${prMonth ? ` · ${prMonth} PR${prMonth > 1 ? 's' : ''} this month` : ''}</span>
-      <span class="wk-strip">${[0, 1, 2, 3, 4, 5, 6].map((i) => { const d = addDays(ws, i); return `<i class="${wDays.has(d) ? 'on' : ''} ${d === t ? 'today' : ''}"></i>`; }).join('')}</span>`);
-    h += tile('', 'data-action="goto" data-tab="food"', `<span class="tile-t">Food${svgI(I_FOOD, 'gold')}</span>
-      ${nut && ['plate', 'meal', 'zone'].includes(nut.method) ? `<span class="tile-n">${Math.round(fuelPart * 100)}<small>%</small></span>` : `<span class="tile-n">${fmt(eaten, 0)}<small> / ${fmt(calT, 0)}</small></span>`}
-      <span class="bar"><i style="width:${Math.min(100, fuelPart * 100)}%;background:var(--gold)"></i></span>`);
-    h += tile('', 'data-action="goto" data-tab="body"', `<span class="tile-t">Body${svgI('<path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/>', 'gold')}</span>
-      ${latest ? `<span class="tile-n">${fmt(latest.weight)}${wChange != null && wChange !== 0 ? ` <small class="${wChange < 0 ? 'down' : 'up'}">${wChange < 0 ? '▼' : '▲'}${Math.abs(wChange)}</small>` : ''}</span>${weights.length > 2 ? Charts.spark(weights.slice(-14)) : '<span class="tile-s">Keep weighing in</span>'}` : '<span class="tile-s">No weigh-ins yet</span>'}`);
-    h += tile('', 'data-action="goto" data-tab="journal" data-seg="habits"', `<span class="tile-t">Habits</span>
-      <span class="hsq">${habits.slice(0, 6).map((hb) => `<i class="${habitDone(t, hb.id) ? 'on' : ''}"></i>`).join('') || '<span class="tile-s">Add your daily habits</span>'}</span>
-      <span class="tile-s">${habits.length ? `${doneHabits.length} of ${habits.length} today` : ''}</span>`);
-    h += tile('', 'data-action="goto" data-tab="journal" data-seg="journal"', `<span class="tile-t">Goals</span>
-      <span class="tile-m">${jStreak ? `Journal · ${jStreak}-day streak` : `${S.goals.filter((g) => !g.done).length} active goal${S.goals.filter((g) => !g.done).length === 1 ? '' : 's'}`}</span>
-      <span class="tile-s">${lastJ && (lastJ.text || lastJ.wins) ? '“' + esc(String(lastJ.wins || lastJ.text).slice(0, 40)) + '”' : 'Write today\'s check-in'}</span>`);
-    const coachTile = window.Cloud && Cloud.user ? (Cloud.profile && Cloud.profile.role === 'coach'
-      ? tile('gold', 'data-action="goto" data-tab="coach"', '<span class="tile-t">Coach</span><span class="tile-m">Dashboard</span><span class="tile-s">Clients, plans, check-ins</span>')
-      : Cloud.coach ? tile('gold', 'data-action="chat-open"', `<span class="tile-t">Coach${window.Chat && Chat.totalUnread && Chat.totalUnread() ? `<span class="tile-badge">${Chat.totalUnread()}</span>` : ''}</span><span class="tile-m">Chat with ${esc((Cloud.coach.full_name || 'your coach').split(' ')[0])}</span><span class="tile-s">Messages, notes, check-ins</span>`) : '') : '';
-    h += coachTile || tile('', 'data-action="goto" data-tab="body" data-seg="photos"', '<span class="tile-t">Photos</span><span class="tile-m">Progress photos</span><span class="tile-s">Your before and after</span>');
-    if (coachTile) h += tile('', 'data-action="goto" data-tab="body" data-seg="photos"', '<span class="tile-t">Photos</span><span class="tile-m">Progress photos</span><span class="tile-s">Your before and after</span>');
-    h += `</section><section class="hub-mini">
-      ${tile('mini', 'data-action="goto" data-tab="exercises"', `${svgI('<path d="M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2zM8 7h7M8 11h7"/>', 'gold')}Exercises`)}
-      ${tile('mini', 'data-action="nut-browse"', `${svgI('<path d="M3 12h18M5 12a7 7 0 0 0 14 0M12 5v2M8 6l1 2M16 6l-1 2"/>', 'gold')}Recipes`)}
-      ${tile('mini', 'data-action="goto" data-tab="train"', `${svgI('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>', 'gold')}Calendar`)}
-      ${tile('mini', 'data-action="goto" data-tab="journal" data-seg="review"', `${svgI('<path d="M7 4h10v3a5 5 0 0 1-10 0zM5 5h2v2a2 2 0 0 1-2-2zM17 5h2a2 2 0 0 1-2 2zM10 13h4v3h3v3H7v-3h3z"/>', 'gold')}Review`)}
+    const ico = (path, fill) => `<svg viewBox="0 0 24 24" width="28" height="28" ${fill ? 'fill="currentColor"' : 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"'} aria-hidden="true">${path}</svg>`;
+    const nav = (act, icon, label, sub, cls = '', badge = '') => `<button class="nav-tile ${cls}" ${act}>${badge}${icon}<b>${label}</b><small>${sub}</small></button>`;
+    const isCoachUser = window.Cloud && Cloud.profile && Cloud.profile.role === 'coach';
+    const unread = window.Chat && Chat.totalUnread ? Chat.totalUnread() : 0;
+    const coachTile = isCoachUser ? nav('data-action="goto" data-tab="coach"', ico('<path d="M21 12a8 8 0 0 1-11.6 7.1L4 21l1.9-5.4A8 8 0 1 1 21 12z"/>'), 'Coach', 'Your clients', 'gold')
+      : window.Cloud && Cloud.coach ? nav('data-action="chat-open"', ico('<path d="M21 12a8 8 0 0 1-11.6 7.1L4 21l1.9-5.4A8 8 0 1 1 21 12z"/>'), 'Coach', `Chat with ${esc((Cloud.coach.full_name || 'coach').split(' ')[0])}`, 'gold', unread ? `<span class="nav-badge">${unread}</span>` : '')
+      : '';
+    h += `<div class="hub-head"><span>Go to</span></div><section class="navhub">
+      <button class="nav-train" data-action="goto" data-tab="train"><span class="nt-ico">${ico('<path d="M6 7v10M18 7v10M3 10v4M21 10v4M6 12h12"/>')}</span>
+        <span class="nt-txt"><b>Train</b><small>${pl ? esc(pl.name) + ' · ' : ''}Program, calendar, PRs, history</small></span>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg></button>
+      ${nav('data-action="goto" data-tab="food"', ico('<path d="M7 3v8a3 3 0 0 0 6 0V3M10 3v18M17 3c-2 2-2 6 0 8v10"/>'), 'Food', 'Log, meals')}
+      ${nav('data-action="goto" data-tab="body" data-seg="weigh"', ico('<path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/>'), 'Body', 'Weight, tape')}
+      ${nav('data-action="goto" data-tab="body" data-seg="photos"', ico('<rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="4"/><path d="M8 6l2-3h4l2 3"/>'), 'Photos', 'Before / after')}
+      ${nav('data-action="goto" data-tab="journal" data-seg="journal"', ico('<path d="M5 3h11l3 3v15H5zM9 8h6M9 12h6M9 16h4"/>'), 'Goals', 'Journal, goals')}
+      ${nav('data-action="goto" data-tab="journal" data-seg="habits"', ico('<rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/>'), 'Habits', 'Daily checklist')}
+      ${coachTile}
+      ${nav('data-action="goto" data-tab="exercises"', ico('<circle cx="12" cy="12" r="9"/><path d="M10 8.5l5 3.5-5 3.5z"/>'), 'Exercises', 'Demos, cues')}
+      ${nav('data-action="nut-browse"', ico('<path d="M3 12h18M5 12a7 7 0 0 0 14 0M12 5v2M8 6l1 2M16 6l-1 2"/>'), 'Recipes', 'Meals to cook')}
+      ${coachTile ? '' : nav('data-action="goto" data-tab="train"', ico('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>'), 'Calendar', 'Plan your week')}
+      ${nav('data-action="goto" data-tab="journal" data-seg="review"', ico('<path d="M7 4h10v3a5 5 0 0 1-10 0zM5 5h2v2a2 2 0 0 1-2-2zM17 5h2a2 2 0 0 1-2 2zM10 13h4v3h3v3H7v-3h3z"/>', true), 'Review', 'Your week')}
     </section>`;
 
     const hd = S.health && (S.health[t] || S.health[addDays(t, -1)]);
@@ -389,6 +405,7 @@
         <button class="btn small primary" data-action="backup-now">Back up</button></div></div>`;
     }
     ui.homeStreak = strk;
+    ui.homeWeek = pl && progs[0] ? Training.programWeek(progs[0], pl).week : null;
     return h;
   };
   const svgI = (path, cls = '') => `<svg class="ti ${cls}" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
@@ -1115,6 +1132,8 @@
     const st = S.settings;
     openModal(`<h2>Settings</h2>
       ${field('Your name', inText('name', st.name, 'placeholder="Optional"'))}
+      <div class="fields-2">${field('First meal around', `<input type="time" name="firstMeal" value="${esc(st.firstMeal || '')}">`)}${field('Usually train at', `<input type="time" name="trainTime" value="${esc(st.trainTime || '')}">`)}</div>
+      <p class="hint" style="margin-top:-4px">Puts times on your home screen's game plan. Leave empty to just show the order.</p>
       ${field('Appearance', `<select name="theme"><option value="dark" ${(st.theme || 'dark') === 'dark' ? 'selected' : ''}>Dark</option><option value="light" ${st.theme === 'light' ? 'selected' : ''}>Light</option><option value="auto" ${st.theme === 'auto' ? 'selected' : ''}>Match my phone</option></select>`)}
       ${field('Units', `<select name="units"><option value="lb" ${st.units === 'lb' ? 'selected' : ''}>Pounds / inches</option><option value="kg" ${st.units === 'kg' ? 'selected' : ''}>Kilograms / cm</option></select>`, 'Switching converts everything you\'ve already logged.')}
       <div class="fields-2">${field('Daily calories', inNum('calorieTarget', st.calorieTarget, 'min="0" required'))}${field('Daily protein (g)', inNum('proteinTarget', st.proteinTarget, 'min="0"'))}</div>
@@ -1134,7 +1153,7 @@
       if (newUnits !== st.units) convertUnits(st.units, newUnits);
       Object.assign(st, {
         name: fd.get('name').trim(), units: newUnits, calorieTarget: num(fd.get('calorieTarget')) || 0, proteinTarget: num(fd.get('proteinTarget')) || 0,
-        workoutsPerWeek: num(fd.get('workoutsPerWeek')) ?? 0, goalWeight: num(fd.get('goalWeight')), theme: fd.get('theme') || 'dark',
+        workoutsPerWeek: num(fd.get('workoutsPerWeek')) ?? 0, goalWeight: num(fd.get('goalWeight')), theme: fd.get('theme') || 'dark', firstMeal: fd.get('firstMeal') || '', trainTime: fd.get('trainTime') || '',
       });
       applyTheme();
       // goal weight was entered in the new unit already, nothing else to do
@@ -1517,7 +1536,7 @@
     const hr = new Date().getHours();
     const homeTitle = `${hr < 12 ? 'Morning' : hr < 18 ? 'Afternoon' : 'Evening'}${S.settings.name ? ', ' + S.settings.name.split(' ')[0] : ''}`;
     $('#view-title').textContent = ui.tab === 'today' ? homeTitle : TITLES[ui.tab];
-    $('#today-label').textContent = prettyDate(todayISO(), { weekday: 'long', month: 'long', day: 'numeric' });
+    $('#today-label').textContent = prettyDate(todayISO(), { weekday: 'long', month: 'short', day: 'numeric' }) + (ui.tab === 'today' && ui.homeWeek ? ` · Week ${ui.homeWeek}` : '');
     document.body.dataset.tab = ui.tab;
     const navTab = PARENT[ui.tab] || ui.tab;
     document.querySelectorAll('.tabbar [data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === navTab));
@@ -1526,7 +1545,7 @@
     $('#back-btn').dataset.action = ui.tab === 'editor' ? 'ed-cancel' : ui.tab === 'chat' ? 'chat-back' : 'goto';
     $('#view').innerHTML = (ui.viewAs ? `<div class="viewas"><span>👀 Viewing <strong>${esc(ui.viewAs.name)}</strong> · read-only</span><button class="btn small" data-action="exit-view-as">Exit</button></div>` : '') + views[ui.tab]();
     document.body.classList.toggle('viewing-as', !!ui.viewAs);
-    const sc = $('#streak-chip'); if (sc) { const n = ui.tab === 'today' ? ui.homeStreak : 0; sc.hidden = !n; sc.querySelector('b').textContent = n || ''; }
+    const sc = $('#streak-chip'); if (sc) { const n = ui.tab === 'today' ? ui.homeStreak : 0; sc.hidden = !n; sc.querySelector('b').textContent = n ? `${n} DAY${n > 1 ? 'S' : ''}` : ''; }
     Training.afterRender(ui.tab);
     if (window.Chat) Chat.afterRender(ui.tab);
     if (window.Notify) Notify.afterRender(ui.tab);
