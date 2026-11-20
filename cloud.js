@@ -155,6 +155,7 @@
     pullIv = setInterval(() => { if (document.visibilityState === 'visible') pull(); }, 60000);
     if (window.Chat) Chat.onSignedIn();
     if (window.Assign) Assign.onSignedIn();
+    if (window.ExLib) ExLib.onSignedIn();
     if (window.Notify) Notify.onSignedIn();
     C.softRender();
   }
@@ -164,6 +165,7 @@
     if (window.Training) Training.resetPlans();
     if (window.Chat) Chat.onSignedOut();
     if (window.Assign) Assign.onSignedOut();
+    if (window.ExLib) ExLib.onSignedOut();
     if (window.Import) Import.reset();
     if (window.Notify) Notify.onSignedOut();
     C.softRender();

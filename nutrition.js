@@ -87,13 +87,12 @@
     const delta = (p.goal === 'cut' ? -1 : 1) * rate / 100 * bw * 500; // %BW/week → kcal/day
     const floor = Math.max(p.sex === 'm' ? 1500 : 1200, bmr * 0.9);
     const kcalFor = (t) => { let k = maintFor(t) + delta + (Number(coach.kcalAdjust) || 0); if (p.goal === 'cut') k = Math.max(k, floor); return k; };
-    // protein (RP): ~1 g per lb bodyweight for lean people; with a body-fat % it's set from lean mass, so
-    // someone carrying more fat isn't told to eat for weight that isn't muscle. A bit higher on a cut.
-    let autoP;
-    if (p.bodyFat) {
-      const lean = bw * (1 - p.bodyFat / 100);
-      autoP = Math.min(lean * (p.goal === 'cut' ? 1.25 : 1.1), bw * (p.goal === 'cut' ? 1.1 : 1.0));
-    } else autoP = bw * (p.goal === 'cut' ? 1.0 : 0.9);
+    // protein (GRIT Auto): 0.8 g per lb bodyweight for women, 1.0 g for men. Safety rule: above 35% body fat
+    // (women) / 30% (men), base it on a healthier target weight (lean mass / 0.75 women, / 0.80 men) instead.
+    const perLb = p.sex === 'm' ? 1.0 : 0.8;
+    let protW = bw;
+    if (p.bodyFat && p.bodyFat > (p.sex === 'm' ? 30 : 35)) protW = Math.min(bw, (bw * (1 - p.bodyFat / 100)) / (p.sex === 'm' ? 0.80 : 0.75));
+    const autoP = perLb * protW;
     const P = coach.protein ? Number(coach.protein) : r5(autoP);
     // fat: same every day (min 0.3 g/lb, ~25% of rest-day calories); carbs absorb the training difference
     const fatPct = p.goal === 'cut' ? 0.25 : p.goal === 'build' ? 0.30 : 0.27;

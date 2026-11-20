@@ -21,7 +21,7 @@
   const relDay = (iso) => { const diff = daysBetween(iso, todayISO()); return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : prettyDate(iso); };
   const byDateDesc = (a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || ''));
 
-  const APP_VERSION = '2026.11.07-a';
+  const APP_VERSION = '2026.11.20-a';
   // ---------- state ----------
   const DEFAULT_STATE = () => ({
     version: 1,
@@ -185,13 +185,16 @@
       else return;
       name = name.trim().replace(/[:\-\u2013]+$/, '').trim();
       if (!name || !weight || !reps || reps > 50) return;
-      out.push({ name, key: name.toLowerCase().replace(/\s+/g, ' '), reps, weight, e1rm: round1(weight * (1 + reps / 30)) });
+      out.push({ name: liftName(name), key: liftKey(name), reps, weight, e1rm: round1(weight * (1 + reps / 30)) });
     });
     return out;
   }
+  // one lift = one library exercise, whatever it was called ("DB Bench" = "Dumbbell Bench Press")
+  const liftKey = (n) => (window.ExLib && ExLib.ready ? ExLib.liftKey(n) : String(n).toLowerCase().replace(/\s+/g, ' ').trim());
+  const liftName = (n) => { const e = window.ExLib && ExLib.ready && ExLib.find(n); return e ? e.name : n; };
   // Sets from a workout: structured sets (plan sessions) or parsed from free text
   const liftSetsOf = (w) => (w.sets
-    ? w.sets.filter((x) => x.weight && x.reps && x.reps <= 50).map((x) => ({ name: x.name, key: x.name.toLowerCase().replace(/\s+/g, ' ').trim(), reps: x.reps, weight: x.weight, e1rm: round1(x.weight * (1 + x.reps / 30)) }))
+    ? w.sets.filter((x) => x.weight && x.reps && x.reps <= 50).map((x) => ({ name: liftName(x.name), key: liftKey(x.name), reps: x.reps, weight: x.weight, e1rm: round1(x.weight * (1 + x.reps / 30)) }))
     : parseLifts(w.exercises));
   // Best set per lift across all workouts (optionally excluding one workout id)
   function liftBests(excludeId) {
@@ -475,7 +478,7 @@
     const ws = weekStart(t);
     const thisWeek = workoutsInWeek(ws);
     const mins = thisWeek.reduce((a, w) => a + (w.minutes || 0), 0);
-    let h = (window.Assign ? Assign.card() : '') + Training.trainCard();
+    let h = `<button class="btn block exlib-btn" data-action="goto" data-tab="exercises">📚 Exercise library <span class="sub">cues, demos, your history</span></button>` + (window.Assign ? Assign.card() : '') + Training.trainCard();
     h += calendar('train', ui.trainDate, { mark: trainMark }) + trainDayCard(ui.trainDate);
     h += `<div class="grid-2"><div class="card"><div class="card-head"><h2>This week</h2></div><div class="big">${new Set(thisWeek.map((w) => w.date)).size}<small> / ${st.workoutsPerWeek} days</small></div></div>
       <div class="card"><div class="card-head"><h2>Minutes</h2></div><div class="big">${fmt(mins, 0)}<small> min</small></div></div></div>`;
@@ -1420,7 +1423,7 @@
   });
 
   // Actions allowed while a coach views a client's app (navigation only)
-  const VIEW_OK = new Set(['goto', 'food-day', 'cal-mode', 'cal-pick', 'cal-nav', 'body-seg', 'goal-seg', 'review-week', 'lift-chart', 'view-session', 'plan-guide', 'pick-photo', 'clear-compare', 'exit-view-as', 'timer-stop']);
+  const VIEW_OK = new Set(['goto', 'food-day', 'cal-mode', 'cal-pick', 'cal-nav', 'body-seg', 'goal-seg', 'review-week', 'lift-chart', 'view-session', 'plan-guide', 'pick-photo', 'clear-compare', 'exit-view-as', 'timer-stop', 'ex-info', 'exlib-open', 'exlib-cat']);
   function enterViewAs(state, name) {
     ui.viewAs = { name, realS: S, realTab: ui.tab };
     S = state;
@@ -1483,6 +1486,7 @@
   if (window.Nutrition) Nutrition.init({ getState: () => S, save, render, esc, toast, todayISO, uid, openModal, closeModal: () => modal.close(), field, inNum, ui, actions, modalActions, mealOptions: (iso) => mealOptions(iso) });
   if (window.Recipes) Recipes.init({ esc, field, openModal, closeModal: () => modal.close(), toast, actions, modalActions, ui });
   if (window.Chat) Chat.init({ esc, render, toast, setTab, relDay, ui, views, actions, TITLES, PARENT });
+  if (window.ExLib) ExLib.init({ getState: () => S, liftSetsOf: (w) => liftSetsOf(w), render, softRender: () => softRender(), toast, setTab, field, openModal, closeModal: () => modal.close(), prettyDate, ui, actions, modalActions, views, TITLES, PARENT });
   if (window.CoachCal) CoachCal.init({ getState: () => S, save, render, toast, field, openModal, closeModal: () => modal.close(), todayISO, addDays, daysBetween, prettyDate, relDay, calendar, ui, actions, modalActions });
   if (window.Assign) Assign.init({ esc, render, softRender: () => softRender(), toast, setTab, field, openModal, closeModal: () => modal.close(), todayISO, addDays, daysBetween, prettyDate, relDay, ui, actions, modalActions });
   if (window.Import) Import.init({ esc, render, toast, field, openModal, closeModal: () => modal.close(), ui, actions });

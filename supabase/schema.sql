@@ -794,3 +794,21 @@ drop policy if exists "imports coach update" on public.plan_imports;
 create policy "imports coach update" on public.plan_imports for update to authenticated using (coach_id = auth.uid()) with check (coach_id = auth.uid());
 grant select, update, delete on public.plan_imports to authenticated;
 revoke all on public.plan_imports from anon;
+
+-- ---------- exercise library: the coach's own exercises, cues, swaps and demo video links ----------
+-- Overrides / additions on top of the built-in starter library (exercises.json). Clients read their coach's.
+create table if not exists public.exercise_library (
+  coach_id   uuid not null references public.profiles(id) on delete cascade,
+  id         text not null,
+  data       jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now(),
+  primary key (coach_id, id)
+);
+alter table public.exercise_library enable row level security;
+drop policy if exists "exlib coach" on public.exercise_library;
+create policy "exlib coach" on public.exercise_library for all to authenticated
+  using (coach_id = auth.uid() and public.is_coach()) with check (coach_id = auth.uid() and public.is_coach());
+drop policy if exists "exlib client read" on public.exercise_library;
+create policy "exlib client read" on public.exercise_library for select to authenticated using (coach_id = public.my_coach());
+grant select, insert, update, delete on public.exercise_library to authenticated;
+revoke all on public.exercise_library from anon;

@@ -72,7 +72,7 @@
         <button class="link-btn" data-action="ed-copy-all" data-path="${path}">Copy to every week</button>
         <button class="link-btn" data-action="ed-del-all" data-path="${path}">Remove everywhere</button></div>` : '';
     return `<div class="ed-ex"><div class="ed-ex-head"><span class="ed-ex-n">${isSuperset ? String.fromCharCode(65 + i) : i + 1}</span>
-        ${inp(path + '.name', ex.name, { ph: 'Exercise name', attrs: 'class="ed-ex-name"' })}${tools(path, { up: i > 0, down: i < n - 1 })}</div>${allWeeks}
+        ${inp(path + '.name', ex.name, { ph: 'Exercise name', attrs: 'class="ed-ex-name" list="ex-names" autocomplete="off"' })}${tools(path, { up: i > 0, down: i < n - 1 })}</div>${allWeeks}
       <div class="ed-grid4">${lab('Sets', inp(path + '.sets', ex.sets, { type: 'number', kind: 'int' }))}${lab('Reps', inp(path + '.reps', ex.reps, { ph: '8–12' }))}${lab('Tempo', inp(path + '.tempo', ex.tempo, { ph: '3-1-1-1' }))}${lab('Rest', inp(path + '.rest', ex.rest, { ph: '60 sec' }))}</div>
       <div class="ed-grid2">${lab('Type', inp(path + '.role', ex.role || 'accessory', { type: 'select', options: ROLES }))}${lab('Effort', inp(path + '.effort', ex.effort, { ph: 'RPE 7' }))}</div>
       ${lab('Set scheme (optional, overrides sets × reps)', inp(path + '.scheme', schemeToText(ex.scheme), { kind: 'scheme', ph: '2x10@60, 2x8@65, 1x5+@85' }))}

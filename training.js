@@ -142,7 +142,7 @@
     if (!n) return 0;
     return /min/.test(s) ? Math.round(n * 60) : Math.round(n);
   };
-  const exKey = (name) => String(name).toLowerCase().replace(/\s+/g, ' ').trim();
+  const exKey = (name) => (window.ExLib && ExLib.ready ? ExLib.liftKey(name) : String(name).toLowerCase().replace(/\s+/g, ' ').trim());
   const unit = () => S().settings.units;
 
   // Last logged sets for an exercise (by plan exercise id, falling back to name)
@@ -628,7 +628,7 @@
       : tgt && !tgt.missing ? `Target today: ${tgt.text} ${unit()} (${pctText(ex.pct)} of your ${MAX_KEYS[ex.of] || ex.of} max${(planCache.get(as.planId) || {}).trainingMax ? ' × training max' : ''}).${ex.of === 'pullup' ? ' That\'s bodyweight + added weight: subtract your bodyweight to get what to hang on the belt.' : ''}`
       : tgt && tgt.missing ? `Enter your ${MAX_KEYS[ex.of] || ex.of} max on the Train tab to see your target weight.` : hint(ex, last, wk2);
     const lastTxt = last ? last.sets.map((s) => (s.weight ? `${s.weight}×${s.reps ?? '–'}` : `${s.reps ?? '–'}`)).join(', ') : '';
-    return `<div class="ex-card" id="ex-${ex.id}"><div class="ex-title">${letter ? `<span class="ex-letter">${letter}</span>` : ''}${esc(ex.name)}</div>
+    return `<div class="ex-card" id="ex-${ex.id}"><div class="ex-title">${letter ? `<span class="ex-letter">${letter}</span>` : ''}<button class="ex-name-btn" data-action="ex-info" data-name="${esc(ex.name)}">${esc(ex.name)} <span class="ex-i" aria-hidden="true">ⓘ</span></button></div>
       <div class="ex-chips"><span class="chip strong">${prescription(ex)}</span>${ex.pct ? `<span class="chip strong">${pctText(ex.pct)}${tgt && !tgt.missing ? ` · ${tgt.text} ${unit()}` : ''}</span>` : ''}${ex.tempo ? `<span class="chip">Tempo ${esc(ex.tempo)}</span>` : ''}${ex.rest ? `<span class="chip">Rest ${esc(ex.rest)}</span>` : ''}${ex.effort ? `<span class="chip">${esc(ex.effort)}</span>` : ''}
         ${ex.role === 'main' && wk.guide && !ex.effort ? `<span class="chip">${esc(wk.guide.effort.replace('Main lifts ', ''))}</span>` : ''}</div>
       ${ex.notes ? `<p class="sub ex-note">${esc(ex.notes)}</p>` : ''}
